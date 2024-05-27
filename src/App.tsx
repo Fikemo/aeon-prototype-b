@@ -117,9 +117,9 @@ function App() {
     pikes: 0,
   });
 
-  const [baseRollOutput, setBaseRollOutput] = useState(0);
-  const [rolledOutput, setRolledOutput] = useState(0);
-  const [damageOutput, setDamageOutput] = useState(0);
+  const [baseRollOutput] = useState(0);
+  const [rolledOutput] = useState(0);
+  const [damageOutput] = useState(0);
   const [activeAttackType, setActiveAttackType] = useState<string>('slash');
 
   const [equippedWeapon, setEquippedWeapon] = useState<Weapon>(weapons.dagger);
@@ -171,9 +171,9 @@ function App() {
     }
   });
 
-  const roll = (d: number = 10) => {
-    return Math.floor(Math.random() * d) + 1;
-  }
+  // const roll = (d: number = 10) => {
+  //   return Math.floor(Math.random() * d) + 1;
+  // }
 
   const getTotalStat = (stat: string): number => {
     return baseStats[stat] + generalStatModifiers[stat] + meleeStatModifiers[stat] + rangedStatModifiers[stat] + magicStatModifiers[stat];
@@ -185,42 +185,42 @@ function App() {
     setHeadTargeting(target === targeting.head);
   }
 
-  const calculateFinalRoll = (roll: number) => {
-    let finalRoll = roll;
-    if (inspired) {
-      finalRoll += 1;
-    }
+  // const calculateFinalRoll = (roll: number) => {
+  //   let finalRoll = roll;
+  //   if (inspired) {
+  //     finalRoll += 1;
+  //   }
 
-    if (abilities.armorImmobility.active) {
-      finalRoll -= 1;
-    }
+  //   if (abilities.armorImmobility.active) {
+  //     finalRoll -= 1;
+  //   }
 
-    if (limbTargeting) {
-      finalRoll -= 1;
-    } else if (headTargeting) {
-      finalRoll -= 2;
-    }
+  //   if (limbTargeting) {
+  //     finalRoll -= 1;
+  //   } else if (headTargeting) {
+  //     finalRoll -= 2;
+  //   }
 
-    // Add AGI modifiers
-    let agi = getTotalStat('AGI');
-    if (slowed) {
-      agi /= 2;
-    }
-    finalRoll += agi;
+  //   // Add AGI modifiers
+  //   let agi = getTotalStat('AGI');
+  //   if (slowed) {
+  //     agi /= 2;
+  //   }
+  //   finalRoll += agi;
 
-    return finalRoll;
-  }
+  //   return finalRoll;
+  // }
 
-  const calculateFinalRolls = () => {
-    const rollOutcomes: number[] = [];
-    rollOutcomes.push(1);
-    for (let i = 2; i <= 9; i++) {
-      rollOutcomes.push(calculateFinalRoll(i));
-    }
-    rollOutcomes.push(10);
+  // const calculateFinalRolls = () => {
+  //   const rollOutcomes: number[] = [];
+  //   rollOutcomes.push(1);
+  //   for (let i = 2; i <= 9; i++) {
+  //     rollOutcomes.push(calculateFinalRoll(i));
+  //   }
+  //   rollOutcomes.push(10);
 
-    return rollOutcomes;
-  }
+  //   return rollOutcomes;
+  // }
 
   const calculateMeleeWeaponDamage = (attackType: string, roll: number) => {
     let damage = 0;
@@ -299,21 +299,21 @@ function App() {
     return {finalRoll, damage};
   }
 
-  const calculateSlashDamage = () => {
-    calculateMeleeWeaponDamage('slash');
-  }
+  // const calculateSlashDamage = () => {
+  //   calculateMeleeWeaponDamage('slash');
+  // }
 
-  const calculateStabDamage = () => {
-    calculateMeleeWeaponDamage('stab');
-  }
+  // const calculateStabDamage = () => {
+  //   calculateMeleeWeaponDamage('stab');
+  // }
 
-  const calculateBluntSlashDamage = () => {
-    calculateMeleeWeaponDamage('bluntSlash');
-  }
+  // const calculateBluntSlashDamage = () => {
+  //   calculateMeleeWeaponDamage('bluntSlash');
+  // }
 
-  const calculateBluntStabDamage = () => {
-    calculateMeleeWeaponDamage('bluntStab');
-  }
+  // const calculateBluntStabDamage = () => {
+  //   calculateMeleeWeaponDamage('bluntStab');
+  // }
 
   const rolls = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
