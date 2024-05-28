@@ -1,6 +1,6 @@
 {
   "name": "aeon-prototype-b",
-  "private": false,
+  "private": true,
   "version": "0.0.0",
   "homepage": "https://fikemo.github.io/aeon-prototype-b",
   "type": "module",

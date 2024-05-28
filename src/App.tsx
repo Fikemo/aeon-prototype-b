@@ -1,6 +1,8 @@
 import React, { useState } from 'react'
 import './App.css'
 
+// TODO: Add half-swording stance
+
 const damageLookup = [
   [0, 0, 0, 0, 0, 0, 0, 0],
   [0, 0, 0, 0, 1, 1, 1, 1],
@@ -51,6 +53,34 @@ const targeting = {
   body: "body",
   limb: "limb",
   head: "head",
+}
+
+const statTypes = {
+  STR: "STR",
+  INT: "INT",
+  PRE: "PRE",
+  AGI: "AGI",
+  CON: "CON",
+  SPI: "SPI",
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const statNames = {
+  STR: "Strength",
+  INT: "Intellect",
+  PRE: "Presence",
+  AGI: "Agility",
+  CON: "Constitution",
+  SPI: "Spirit",
+}
+
+const camelCaseToDisplayName = (camelCase: string) => {
+  let displayName = camelCase;
+  // Add a space between camel case words
+  displayName = displayName.replace(/([A-Z])/g, ' $1');
+  // Capitalize the first letter
+  displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+  return displayName;
 }
 
 function App() {
@@ -117,15 +147,14 @@ function App() {
     pikes: 0,
   });
 
-  const [baseRollOutput] = useState(0);
-  const [rolledOutput] = useState(0);
-  const [damageOutput] = useState(0);
   const [activeAttackType, setActiveAttackType] = useState<string>('slash');
 
-  const [equippedWeapon, setEquippedWeapon] = useState<Weapon>(weapons.dagger);
-  const [equippedWeaponSkill, setEquippedWeaponSkill] = useState<string>(weapons.dagger.skill);
-  const [slashDamageDisplay, setSlashDamageDisplay] = useState<string>(weapons.dagger.slashDamage.join(', '));
-  const [stabDamageDisplay, setStabDamageDisplay] = useState<string>(weapons.dagger.stabDamage.join(', '));
+  const defaultWeapon = weapons.dagger;
+  const [equippedWeapon, setEquippedWeapon] = useState<Weapon>(defaultWeapon);
+  const [equippedWeaponSkill, setEquippedWeaponSkill] = useState<string>(defaultWeapon.skill);
+  const [ambushWeapon, setAmbushWeapon] = useState<boolean>(defaultWeapon.ambushWeapon);
+  const [slashDamageDisplay, setSlashDamageDisplay] = useState<string>(defaultWeapon.slashDamage.join(', '));
+  const [stabDamageDisplay, setStabDamageDisplay] = useState<string>(defaultWeapon.stabDamage.join(', '));
   const [bluntSlashDamageDisplay, setBluntSlashDamageDisplay] = useState<string>('');
   const [bluntStabDamageDisplay, setBluntStabDamageDisplay] = useState<string>('');
 
@@ -152,28 +181,24 @@ function App() {
   
   const [abilities, setAbilities] = useState<Abilities>({
     armorImmobility: {
-      name: "Armor Immobility",
+      name: 'Armor Immobility',
       active: false,
       overrides: [],
-      description: "-1 to any AGI and STR checks."
+      description: '-1 to any AGI and STR checks.'
     },
     ambusher: {
-      name: "Ambusher",
+      name: 'Ambusher',
       active: false,
       overrides: [],
-      description: "Ambush attacks deal 1.5x damage."
+      description: 'Ambush attacks deal 1.5x damage.'
     },
     masterAmbusher: {
-      name: "Master Ambusher",
+      name: 'Master Ambusher',
       active: false,
-      overrides: ["ambusher"],
-      description: "Ambush attacks deal 2x damage."
+      overrides: ['ambusher'],
+      description: 'Ambush attacks deal 2x damage.'
     }
   });
-
-  // const roll = (d: number = 10) => {
-  //   return Math.floor(Math.random() * d) + 1;
-  // }
 
   const getTotalStat = (stat: string): number => {
     return baseStats[stat] + generalStatModifiers[stat] + meleeStatModifiers[stat] + rangedStatModifiers[stat] + magicStatModifiers[stat];
@@ -185,48 +210,10 @@ function App() {
     setHeadTargeting(target === targeting.head);
   }
 
-  // const calculateFinalRoll = (roll: number) => {
-  //   let finalRoll = roll;
-  //   if (inspired) {
-  //     finalRoll += 1;
-  //   }
-
-  //   if (abilities.armorImmobility.active) {
-  //     finalRoll -= 1;
-  //   }
-
-  //   if (limbTargeting) {
-  //     finalRoll -= 1;
-  //   } else if (headTargeting) {
-  //     finalRoll -= 2;
-  //   }
-
-  //   // Add AGI modifiers
-  //   let agi = getTotalStat('AGI');
-  //   if (slowed) {
-  //     agi /= 2;
-  //   }
-  //   finalRoll += agi;
-
-  //   return finalRoll;
-  // }
-
-  // const calculateFinalRolls = () => {
-  //   const rollOutcomes: number[] = [];
-  //   rollOutcomes.push(1);
-  //   for (let i = 2; i <= 9; i++) {
-  //     rollOutcomes.push(calculateFinalRoll(i));
-  //   }
-  //   rollOutcomes.push(10);
-
-  //   return rollOutcomes;
-  // }
-
   const calculateMeleeWeaponDamage = (attackType: string, roll: number) => {
     let damage = 0;
     const baseRoll = roll;
     let finalRoll = baseRoll;
-    // setBaseRollOutput(baseRoll);
 
     let damageArray: number[] = [];
     switch (attackType) {
@@ -249,13 +236,20 @@ function App() {
       damage = 0;
     } else if (baseRoll === 10) {
       // Critical Hit
-      damage = damageArray[damageArray.length - 1] * 2;
+      damage = damageArray[damageArray.length - 1];
+      if (attackType === 'bluntSlash' || attackType === 'bluntStab') {
+        damage += getTotalStat(statTypes.STR);
+      }
+      damage *= 2;
     } else {
       const damageLookupRow = damageArray.length - 1;
       const damageIndex = damageLookup[damageLookupRow][Math.min(baseRoll, 8) - 1];
       damage = damageArray[damageIndex];
+      if (attackType === 'bluntSlash' || attackType === 'bluntStab') {
+        damage += getTotalStat(statTypes.STR);
+      }
 
-      const skillModifier: number = skillModifiers[equippedWeapon.skill];
+      const skillModifier: number = skillModifiers[equippedWeaponSkill];
       if (skillModifier) {
         finalRoll += skillModifier;
       }
@@ -275,17 +269,18 @@ function App() {
       }
 
       // Add AGI modifiers
-      let agi = getTotalStat('AGI');
+      let agi = getTotalStat(statTypes.AGI);
       if (slowed) {
         agi /= 2;
       }
       finalRoll += agi;
+      finalRoll = Math.ceil(finalRoll);
     }
 
     if (ambush) {
       damage *= 2;
 
-      if (equippedWeapon.ambushWeapon) {
+      if (ambushWeapon) {
         damage *= 2;
       }
 
@@ -298,22 +293,6 @@ function App() {
 
     return {finalRoll, damage};
   }
-
-  // const calculateSlashDamage = () => {
-  //   calculateMeleeWeaponDamage('slash');
-  // }
-
-  // const calculateStabDamage = () => {
-  //   calculateMeleeWeaponDamage('stab');
-  // }
-
-  // const calculateBluntSlashDamage = () => {
-  //   calculateMeleeWeaponDamage('bluntSlash');
-  // }
-
-  // const calculateBluntStabDamage = () => {
-  //   calculateMeleeWeaponDamage('bluntStab');
-  // }
 
   const rolls = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
@@ -356,6 +335,7 @@ function App() {
             equippedWeapon={equippedWeapon}
             setEquippedWeapon={setEquippedWeapon}
             setEquippedWeaponSkill={setEquippedWeaponSkill}
+            setAmbushWeapon={setAmbushWeapon}
             setActiveAttackType={setActiveAttackType}
             setSlashDamageDisplay={setSlashDamageDisplay}
             setStabDamageDisplay={setStabDamageDisplay}
@@ -370,8 +350,27 @@ function App() {
             setEquippedWeaponSkill={setEquippedWeaponSkill}
           />
           <br />
-          {equippedWeapon.lengthy && 'Lengthy '}
-          {equippedWeapon.ambushWeapon && 'Ambush-Weapon '}
+          <br />
+          <div>
+            <label>Ambush-Weapon: </label>
+            <input type="checkbox" checked={ambushWeapon} onChange={() => setAmbushWeapon(!ambushWeapon)} />
+          </div>
+          <div>
+            <label>Slash: </label>
+            <input type="text" value={slashDamageDisplay} onChange={(e) => setSlashDamageDisplay(e.target.value)} />
+          </div>
+          <div>
+            <label>Stab: </label>
+            <input type="text" value={stabDamageDisplay} onChange={(e) => setStabDamageDisplay(e.target.value)} />
+          </div>
+          <div>
+            <label>Blunt Slash: </label>
+            <input type="text" value={bluntSlashDamageDisplay} onChange={(e) => setBluntSlashDamageDisplay(e.target.value)} />
+          </div>
+          <div>
+            <label>Blunt Stab: </label>
+            <input type="text" value={bluntStabDamageDisplay} onChange={(e) => setBluntStabDamageDisplay(e.target.value)} />
+          </div>
           <br />
           {/* Radio buttons for body, limb, and head targeting */}
           <label>Body: </label>
@@ -392,21 +391,6 @@ function App() {
           <label>Stunned: </label>
           <input type="checkbox" checked={stunned} onChange={() => setStunned(!stunned)} />
           <br />
-          <label>Slash: </label>
-          <input type="text" value={slashDamageDisplay} onChange={(e) => setSlashDamageDisplay(e.target.value)} />
-          <>{' (-1 Reach)'}</>
-          <br />
-          <label>Stab: </label>
-          <input type="text" value={stabDamageDisplay} onChange={(e) => setStabDamageDisplay(e.target.value)} />
-          <br />
-          <label>Blunt Slash: </label>
-          <input type="text" value={bluntSlashDamageDisplay} onChange={(e) => setBluntSlashDamageDisplay(e.target.value)} />
-          <>{' (-1 Reach)'}</>
-          <br />
-          <label>Blunt Stab: </label>
-          <input type="text" value={bluntStabDamageDisplay} onChange={(e) => setBluntStabDamageDisplay(e.target.value)} />
-          <br />
-          <br />
           <button disabled={slashDamageDisplay === ''}
           onClick={() => {
             setActiveAttackType('slash');
@@ -424,12 +408,6 @@ function App() {
             setActiveAttackType('bluntStab');
           }}>Blunt Stab</button>
           <br />
-          <br />
-          <div>
-            Base Roll: {baseRollOutput + (rolledOutput === 10 ? " - Critical Hit!" : "") + (rolledOutput === 1 ? " - Critical Miss!" : "")}
-          </div>
-          <div>Roll: {rolledOutput}</div>
-          <div>Damage: {damageOutput}</div>
         </div>
         <div style={{width: "300px"}}>
           <table>
@@ -441,14 +419,9 @@ function App() {
             </thead>
             <tbody>
               {Object.keys(skillModifiers).map((skill) => {
-                let displayName = skill;
-                // Add a space between camel case words
-                displayName = displayName.replace(/([A-Z])/g, ' $1');
-                // Capitalize the first letter
-                displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
                 return (
                   <tr key={skill}>
-                    <td>{displayName}</td>
+                    <td>{camelCaseToDisplayName(skill)}</td>
                     <td><SkillInput skill={skill} skillModifiers={skillModifiers} setSkillModifiers={setSkillModifiers}/></td>
                   </tr>
                 )
@@ -490,7 +463,7 @@ function App() {
       <table style={{width: "1000px"}}>
           <thead>
             <tr>
-              <th style={{width: "100px", textAlign: "left"}}>{activeAttackType}</th>
+              <th style={{width: "100px", textAlign: "left"}}>{camelCaseToDisplayName(activeAttackType)}</th>
               <th style={{width: "100px"}}>1</th>
               <th style={{width: "100px"}}>2</th>
               <th style={{width: "100px"}}>3</th>
@@ -578,6 +551,7 @@ interface WeaponSelectorProps {
   equippedWeapon: Weapon,
   setEquippedWeapon: React.Dispatch<React.SetStateAction<Weapon>>
   setEquippedWeaponSkill: React.Dispatch<React.SetStateAction<string>>
+  setAmbushWeapon: React.Dispatch<React.SetStateAction<boolean>>
   setActiveAttackType: React.Dispatch<React.SetStateAction<string>>
   setSlashDamageDisplay: React.Dispatch<React.SetStateAction<string>>
   setStabDamageDisplay: React.Dispatch<React.SetStateAction<string>>
@@ -590,6 +564,7 @@ function WeaponSelector({
   equippedWeapon,
   setEquippedWeapon,
   setEquippedWeaponSkill,
+  setAmbushWeapon,
   setActiveAttackType,
   setStabDamageDisplay,
   setSlashDamageDisplay,
@@ -600,6 +575,7 @@ function WeaponSelector({
     const selectedWeapon = weapons[event.target.value];
     setEquippedWeapon(selectedWeapon);
     setEquippedWeaponSkill(selectedWeapon.skill);
+    setAmbushWeapon(selectedWeapon.ambushWeapon ? true : false);
 
     if (selectedWeapon.slashDamage) {
       setActiveAttackType('slash');
@@ -656,12 +632,9 @@ function SkillSelector({ skills, equippedWeaponSkill, setEquippedWeaponSkill }: 
 
   return (
     <select value={equippedWeaponSkill} onChange={handleSelectChange}>
+      <option value="">None</option>
       {Object.keys(skills).map((skillName) => {
-        let displayName = skillName;
-        // Add a space between camel case words
-        displayName = displayName.replace(/([A-Z])/g, ' $1');
-        // Capitalize the first letter
-        displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+        const displayName = camelCaseToDisplayName(skillName);
         return <option key={skillName} value={skillName}>{displayName}</option>
       })}
     </select>
