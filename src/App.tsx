@@ -11,6 +11,7 @@ const damageLookup = [
 ];
 
 interface Weapon {
+  [key: string]: string | number | number[] | boolean | undefined,
   name: string,
   skill: string,
   slashDamage?: number[],
@@ -180,6 +181,7 @@ function App() {
     'flails',
     'maces',
     'oneHandedAxes',
+    'bows',
   ];
 
   const [skillModifiers, setSkillModifiers] = useState<SkillModifiers>({
@@ -240,6 +242,9 @@ function App() {
       modifier: -1,
       active: true,
       parent: 'striking'
+    },
+    bows: {
+      modifier: -2
     }
   });
 
@@ -771,20 +776,20 @@ function App() {
       </div>
       <br />
       <div>
-      <table>
+      <table style={{borderCollapse: 'collapse', width: '100%', minWidth: '850px'}}>
           <thead>
             <tr>
               <th style={{width: "100px", textAlign: "left"}}>Base Roll</th>
               <th style={{width: "80px"}}>1</th>
-              <th style={{width: "80px"}}>2</th>
+              <th style={{width: "80px", backgroundColor: "lightgray"}}>2</th>
               <th style={{width: "80px"}}>3</th>
-              <th style={{width: "80px"}}>4</th>
+              <th style={{width: "80px", backgroundColor: "lightgray"}}>4</th>
               <th style={{width: "80px"}}>5</th>
-              <th style={{width: "80px"}}>6</th>
+              <th style={{width: "80px", backgroundColor: "lightgray"}}>6</th>
               <th style={{width: "80px"}}>7</th>
-              <th style={{width: "80px"}}>8</th>
+              <th style={{width: "80px", backgroundColor: "lightgray"}}>8</th>
               <th style={{width: "80px"}}>9</th>
-              <th style={{width: "80px"}}>10</th>
+              <th style={{width: "80px", backgroundColor: "lightgray"}}>10</th>
             </tr>
           </thead>
           <tbody>
@@ -796,7 +801,7 @@ function App() {
                 if (roll === 1) displayRoll = 'MISS';
                 else if (roll === 10) displayRoll = 'CRIT';
 
-                let backgroundColor = 'white';
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
                 if (stunned && (roll === 9 || roll === 10)) {
                   backgroundColor = 'black'
                 }
@@ -816,7 +821,7 @@ function App() {
               {rolls.map((roll) => {
                 const {damage} = calculatePunchDamage(roll);
 
-                let backgroundColor = 'white';
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
                 if (stunned && (roll === 9 || roll === 10)) {
                   backgroundColor = 'black'
                 }
@@ -840,7 +845,7 @@ function App() {
                 if (roll === 1) displayRoll = 'MISS';
                 else if (roll === 10) displayRoll = 'CRIT';
 
-                let backgroundColor = 'white';
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
                 if (stunned && (roll === 9 || roll === 10)) {
                   backgroundColor = 'black'
                 }
@@ -860,7 +865,7 @@ function App() {
               {rolls.map((roll) => {
                 const {damage} = calculateKickDamage(roll);
 
-                let backgroundColor = 'white';
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
                 if (stunned && (roll === 9 || roll === 10)) {
                   backgroundColor = 'black'
                 }
@@ -884,7 +889,7 @@ function App() {
                 if (roll === 1) displayRoll = 'MISS';
                 else if (roll === 10) displayRoll = 'CRIT';
 
-                let backgroundColor = 'white';
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
                 if (stunned && (roll === 9 || roll === 10)) {
                   backgroundColor = 'black'
                 }
@@ -904,7 +909,7 @@ function App() {
               {rolls.map((roll) => {
                 const {damage} = calculateHeavyPunchDamage(roll);
 
-                let backgroundColor = 'white';
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
                 if (stunned && (roll === 9 || roll === 10)) {
                   backgroundColor = 'black'
                 }
@@ -928,7 +933,7 @@ function App() {
                 if (roll === 1) displayRoll = 'MISS';
                 else if (roll === 8) displayRoll = 'CRIT';
 
-                let backgroundColor = 'white';
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
                 if (stunned && (roll === 7 || roll === 8)) {
                   backgroundColor = 'black'
                 }
@@ -1071,14 +1076,14 @@ interface DamageInputProps {
 }
 
 function DamageInput({label, property, equippedWeapon, setEquippedWeapon }: DamageInputProps) {
-  property = property as keyof Weapon;
-  const damageArray = equippedWeapon[property] || [];
+  const damageArray = equippedWeapon[property] as number[] || [];
 
   const defaultInput = damageArray.join(', ');
   const [inputValue, setInputValue] = useState(defaultInput);
 
   useEffect(() => {
-    setInputValue(equippedWeapon[property]?.join(', ') || '');
+    const a = equippedWeapon[property] as number[] || [];
+    setInputValue(a.join(', ') || '');
   }, [equippedWeapon, property]);
 
   const handleBlur = () => {
@@ -1192,7 +1197,7 @@ const MeleeWeaponTableRows = ({ label, calculateDamage, rolls, stunned }: MeleeW
           if (roll === 1) displayRoll = 'MISS';
           else if (roll === 10) displayRoll = 'CRIT';
 
-          let backgroundColor = 'white';
+          let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
           if (stunned && (roll === 9 || roll === 10)) {
             backgroundColor = 'black'
           }
@@ -1212,7 +1217,7 @@ const MeleeWeaponTableRows = ({ label, calculateDamage, rolls, stunned }: MeleeW
         {rolls.map((roll) => {
           const {damage} = calculateDamage(roll);
 
-          let backgroundColor = 'white';
+          let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
           if (stunned && (roll === 9 || roll === 10)) {
             backgroundColor = 'black'
           }
