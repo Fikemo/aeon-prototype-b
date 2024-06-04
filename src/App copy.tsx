@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import './App.css'
 
 // TODO: Add half-swording stance
@@ -11,14 +11,23 @@ const damageLookup = [
 ];
 
 interface Weapon {
+  [key: string]: string | number | number[] | boolean | undefined,
   name: string,
   skill: string,
   slashDamage?: number[],
   stabDamage?: number[],
   bluntSlashDamage?: number[],
   bluntStabDamage?: number[],
+  apSlashDamage?: number[],   // Armor piercing
+  apStabDamage?: number[],    // Armor piercing
+  strSlashMultiplier?: number, // STR * multiplier + slashDamage (even if slashDamage is falsy)
+  strStabMultiplier?: number,  // STR * multiplier + stabDamage (even if stabDamage is falsy)
   lengthy?: boolean,
   ambushWeapon?: boolean,
+  
+  // For bows
+  ranges?: number[],
+  bowDamage?: number[]
 }
 
 interface Weapons {
@@ -50,8 +59,16 @@ const weapons = {
   woodenSpear: {
     name: "Wooden Spear",
     skill: "spears",
-    stabDamage: [10, 30, 35],
-    strSlashDamageMultiplier: 2,
+    stabDamage: [20, 30, 35],
+    strSlashMultiplier: 2,
+  },
+  longbow: {
+    name: "Longbow",
+    skill: "bows",
+    strSlashMultiplier: 2,
+    strStabMultiplier: 2,
+    ranges: [100, 200, 360],
+    bowDamage: [30, 20, 60]
   }
 }
 
@@ -70,13 +87,42 @@ const statTypes = {
   SPI: "SPI",
 }
 
-const camelCaseToDisplayName = (camelCase: string) => {
-  let displayName = camelCase;
-  // Add a space between camel case words
+const pascalCaseToDisplayName = (pascalCase: string) => {
+  let displayName = pascalCase;
+  // Add a space between pascal case words
   displayName = displayName.replace(/([A-Z])/g, ' $1');
   // Capitalize the first letter
   displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
   return displayName;
+}
+
+interface SkillModifier {
+  modifier: number,
+  active?: boolean,
+  parent?: string,
+}
+
+interface SkillModifiers {
+  [key: string]: SkillModifier
+}
+
+const getHighestSkillModifier = (skill: string, skillModifiers: SkillModifiers): number => {
+  // Get the greatest skill modifier from the skill and its parents that are active
+  let highestModifier = 0;
+  let currentSkill: string | undefined = skill;
+  while (currentSkill) {
+    highestModifier = Math.min(highestModifier, skillModifiers[currentSkill].modifier);
+    currentSkill = skillModifiers[currentSkill].parent;
+  }
+
+  currentSkill = skill;
+  while (currentSkill) {
+    if (skillModifiers[currentSkill].active || skillModifiers[currentSkill].active === undefined) {
+      highestModifier = Math.max(highestModifier, skillModifiers[currentSkill].modifier);
+    }
+    currentSkill = skillModifiers[currentSkill].parent;
+  }
+  return highestModifier;
 }
 
 function App() {
@@ -125,34 +171,87 @@ function App() {
     SPI: 0,
   });
 
-  const [skillModifiers, setSkillModifiers] = useState<{[key: string]: number}>({
-    basicSwords: 0,
-    daggers: 0,
-    standardSwords: 0,
-    cuttingSwords: 0,
-    thrustingSwords: 0,
-    twoHandedSwords: 0,
-    basicHaftedWeapons: 0,
-    flails: 0,
-    maces: 0,
-    oneHandedAxes: 0,
-    greatswords: 0,
-    spears: 0,
-    poleaxes: 0,
-    glaives: 0,
-    pikes: 0,
-  });
+  const weaponSkills = [
+    'unarmed',
+    'daggers',
+    'standardSwords',
+    'cuttingSwords',
+    'thrustingSwords',
+    'twoHandedSwords',
+    'flails',
+    'maces',
+    'oneHandedAxes',
+    'bows',
+  ];
 
-  const [activeAttackType, setActiveAttackType] = useState<string>('slash');
+  const [skillModifiers, setSkillModifiers] = useState<SkillModifiers>({
+    unarmed: { modifier: 0 },
+
+    swords: { modifier: -4 },
+    daggers: {
+      modifier: 0,
+      active: false,
+      parent: 'swords'
+    },
+    standardSwords: {
+      modifier: 0,
+      active: false,
+      parent: 'swords'
+    },
+    cuttingSwords: {
+      modifier: 0,
+      active: false,
+      parent: 'swords'
+    },
+    thrustingSwords: {
+      modifier: 0,
+      active: false,
+      parent: 'swords'
+    },
+    twoHandedSwords: {
+      modifier: 0,
+      active: false,
+      parent: 'swords'
+    },
+
+    hafted: {
+      modifier: 0,
+      active: false
+    },
+    chain: {
+      modifier: -4,
+      active: true,
+      parent: 'hafted'
+    },
+    flails: {
+      modifier: 0,
+      active: false,
+      parent: 'chain'
+    },
+    striking: {
+      modifier: 0,
+      active: false,
+      parent: 'hafted'
+    },
+    maces: {
+      modifier: 0,
+      active: true,
+      parent: 'striking'
+    },
+    oneHandedAxes: {
+      modifier: -1,
+      active: true,
+      parent: 'striking'
+    },
+    bows: {
+      modifier: -2
+    }
+  });
 
   const defaultWeapon = weapons.dagger;
   const [equippedWeapon, setEquippedWeapon] = useState<Weapon>(defaultWeapon);
   const [equippedWeaponSkill, setEquippedWeaponSkill] = useState<string>(defaultWeapon.skill);
   const [ambushWeapon, setAmbushWeapon] = useState<boolean>(defaultWeapon.ambushWeapon);
-  const [slashDamageDisplay, setSlashDamageDisplay] = useState<string>(defaultWeapon.slashDamage.join(', '));
-  const [stabDamageDisplay, setStabDamageDisplay] = useState<string>(defaultWeapon.stabDamage.join(', '));
-  const [bluntSlashDamageDisplay, setBluntSlashDamageDisplay] = useState<string>('');
-  const [bluntStabDamageDisplay, setBluntStabDamageDisplay] = useState<string>('');
 
   const [bodyTargeting, setBodyTargeting] = useState(true);
   const [limbTargeting, setLimbTargeting] = useState(false);
@@ -182,6 +281,18 @@ function App() {
       overrides: [],
       description: '-1 to any AGI and STR checks.'
     },
+    haymaker: {
+      name: 'Haymaker',
+      active: false,
+      overrides: [],
+      description: 'Heavy Punch now uses AGI / 2.'
+    },
+    brawny: {
+      name: 'Brawny',
+      active: false,
+      overrides: [],
+      description: '+2 to STR based Unarmed attack rolls.'
+    },
     ambusher: {
       name: 'Ambusher',
       active: false,
@@ -206,48 +317,21 @@ function App() {
     setHeadTargeting(target === targeting.head);
   }
 
-  const calculateMeleeWeaponDamage = (attackType: string, roll: number) => {
-    let damage = 0;
+  const calculatePunchDamage = (roll: number) => {
+    let damage = getTotalStat(statTypes.STR);
     const baseRoll = roll;
     let finalRoll = baseRoll;
-
-    let damageArray: number[] = [];
-    switch (attackType) {
-      case 'slash':
-        damageArray = slashDamageDisplay.split(',').map((damage) => parseInt(damage.trim()));
-        break;
-      case 'stab':
-        damageArray = stabDamageDisplay.split(',').map((damage) => parseInt(damage.trim()));
-        break;
-      case 'bluntSlash':
-        damageArray = bluntSlashDamageDisplay.split(',').map((damage) => parseInt(damage.trim()));
-        break;
-      case 'bluntStab':
-        damageArray = bluntStabDamageDisplay.split(',').map((damage) => parseInt(damage.trim()));
-        break;
-    }
 
     if (baseRoll === 1) {
       // Critical Miss
       damage = 0;
     } else if (baseRoll === 10) {
       // Critical Hit
-      damage = damageArray[damageArray.length - 1];
-      if (attackType === 'bluntSlash' || attackType === 'bluntStab') {
-        damage += getTotalStat(statTypes.STR);
-      }
       damage *= 2;
     } else {
-      const damageLookupRow = damageArray.length - 1;
-      const damageIndex = damageLookup[damageLookupRow][Math.min(baseRoll, 8) - 1];
-      damage = damageArray[damageIndex];
-      if (attackType === 'bluntSlash' || attackType === 'bluntStab') {
-        damage += getTotalStat(statTypes.STR);
-      }
-
-      const skillModifier: number = skillModifiers[equippedWeaponSkill];
+      const skillModifier: SkillModifier = skillModifiers.unarmed;
       if (skillModifier) {
-        finalRoll += skillModifier;
+        finalRoll += skillModifier.modifier;
       }
 
       if (inspired) {
@@ -269,8 +353,255 @@ function App() {
       if (slowed) {
         agi /= 2;
       }
+      agi = Math.ceil(agi);
       finalRoll += agi;
-      finalRoll = Math.ceil(finalRoll);
+    }
+
+    if (ambush) {
+      damage *= 2;
+
+      if (abilities.masterAmbusher.active) {
+        damage *= 2;
+      } else if (abilities.ambusher.active) {
+        damage *= 1.5;
+      }
+    }
+
+    return {finalRoll, damage};
+  }
+
+  const calculateKickDamage = (roll: number) => {
+    let damage = Math.ceil(getTotalStat(statTypes.STR) * 1.5);
+    const baseRoll = roll;
+    let finalRoll = baseRoll;
+
+    if (baseRoll === 1) {
+      // Critical Miss
+      damage = 0;
+    } else if (baseRoll === 10) {
+      // Critical Hit
+      damage *= 2;
+    } else {
+      finalRoll -= 2;
+
+      const skillModifier: SkillModifier = skillModifiers.unarmed;
+      if (skillModifier) {
+        finalRoll += skillModifier.modifier;
+      }
+
+      if (inspired) {
+        finalRoll += 1;
+      }
+
+      if (limbTargeting) {
+        finalRoll -= 1;
+      } else if (headTargeting) {
+        finalRoll -= 2;
+      }
+
+      if (abilities.armorImmobility.active) {
+        finalRoll -= 1;
+      }
+
+      // Add AGI modifiers
+      let agi = getTotalStat(statTypes.AGI);
+      if (slowed) {
+        agi /= 2;
+      }
+      agi = Math.ceil(agi);
+      finalRoll += agi;
+    }
+
+    if (ambush) {
+      damage *= 2;
+
+      if (abilities.masterAmbusher.active) {
+        damage *= 2;
+      } else if (abilities.ambusher.active) {
+        damage *= 1.5;
+      }
+    }
+
+    return {finalRoll, damage};
+  }
+
+  const calculateHeavyPunchDamage = (roll: number) => {
+    let damage = getTotalStat(statTypes.STR) * 2;
+    const baseRoll = roll;
+    let finalRoll = baseRoll;
+
+    if (baseRoll === 1) {
+      // Critical Miss
+      damage = 0;
+    } else if (baseRoll === 10) {
+      // Critical Hit
+      damage *= 2;
+    } else {
+
+      const skillModifier: SkillModifier = skillModifiers.unarmed;
+      if (skillModifier) {
+        finalRoll += skillModifier.modifier;
+      }
+
+      if (inspired) {
+        finalRoll += 1;
+      }
+
+      if (limbTargeting) {
+        finalRoll -= 1;
+      } else if (headTargeting) {
+        finalRoll -= 2;
+      }
+
+      if (abilities.armorImmobility.active) {
+        finalRoll -= 1;
+      }
+
+      // Add AGI modifiers
+      let agi = getTotalStat(statTypes.AGI);
+      abilities.haymaker.active ? agi /= 2 : agi /= 4;
+      if (slowed) {
+        agi /= 2;
+      }
+      agi = Math.ceil(agi);
+      finalRoll += agi;
+    }
+
+    if (ambush) {
+      damage *= 2;
+
+      if (abilities.masterAmbusher.active) {
+        damage *= 2;
+      } else if (abilities.ambusher.active) {
+        damage *= 1.5;
+      }
+    }
+
+    return {finalRoll, damage};
+  }
+
+  const calculateGrapple = (roll: number) => {
+    // Does not do damage
+    const baseRoll = roll;
+    let finalRoll = baseRoll;
+
+    if (baseRoll === 1) {
+      // Critical Miss
+    } else if (baseRoll === 8) {
+      // Critical Success
+    } else {
+      const skillModifier: SkillModifier = skillModifiers.unarmed;
+      if (skillModifier) {
+        finalRoll += skillModifier.modifier;
+      }
+
+      if (inspired) {
+        finalRoll += 1;
+      }
+
+      if (limbTargeting) {
+        finalRoll -= 1;
+      } else if (headTargeting) {
+        finalRoll -= 2;
+      }
+
+      if (abilities.armorImmobility.active) {
+        finalRoll -= 1;
+      }
+
+      if (abilities.brawny.active) {
+        finalRoll += 2;
+      }
+
+      // Add STR modifiers
+      let str = getTotalStat(statTypes.STR);
+      if (slowed) {
+        str /= 2;
+      }
+      str = Math.ceil(str);
+      finalRoll += str;
+    }
+
+    return finalRoll;
+  }
+
+  const calculateMeleeWeaponDamage = (attackType: string, roll: number) => {
+    let damage = 0;
+    const baseRoll = roll;
+    let finalRoll = baseRoll;
+
+    let damageArray: number[] | undefined = [];
+    switch (attackType) {
+      case 'slash':
+        damageArray = equippedWeapon.slashDamage;
+        break;
+      case 'stab':
+        damageArray = equippedWeapon.stabDamage;
+        break;
+      case 'bluntSlash':
+        damageArray = equippedWeapon.bluntSlashDamage;
+        break;
+      case 'bluntStab':
+        damageArray = equippedWeapon.bluntStabDamage;
+        break;
+      case 'apSlash':
+        damageArray = equippedWeapon.slashDamage;
+        break;
+      case 'apStab':
+        damageArray = equippedWeapon.stabDamage;
+        break;
+    }
+
+    if (damageArray?.length === 0 || !damageArray) {
+      return {finalRoll, damage};
+    }
+
+    if (baseRoll === 1) {
+      // Critical Miss
+      damage = 0;
+    } else {
+      const damageLookupRow = damageArray.length - 1;
+      const damageIndex = damageLookup[damageLookupRow]?.[Math.min(baseRoll, 8) - 1];
+      if (damageIndex === undefined) {
+        return {finalRoll, damage};
+      }
+      damage += damageArray[damageIndex];
+      if (attackType === 'slash') {
+        damage += equippedWeapon.strSlashMultiplier ? getTotalStat(statTypes.STR) * equippedWeapon.strSlashMultiplier : 0;
+      }
+      if (attackType === 'stab') {
+        damage += equippedWeapon.strStabMultiplier ? getTotalStat(statTypes.STR) * equippedWeapon.strStabMultiplier : 0;
+      }
+      if (attackType === 'bluntSlash' || attackType === 'bluntStab') {
+        damage += getTotalStat(statTypes.STR);
+      }
+
+      const skillModifier: SkillModifier = skillModifiers[equippedWeaponSkill];
+      if (skillModifier) {
+        finalRoll += getHighestSkillModifier(equippedWeaponSkill, skillModifiers);
+      }
+
+      if (inspired) {
+        finalRoll += 1;
+      }
+
+      if (limbTargeting) {
+        finalRoll -= 1;
+      } else if (headTargeting) {
+        finalRoll -= 2;
+      }
+
+      if (abilities.armorImmobility.active) {
+        finalRoll -= 1;
+      }
+
+      // Add AGI modifiers
+      let agi = getTotalStat(statTypes.AGI);
+      if (slowed) {
+        agi /= 2;
+      }
+      agi = Math.ceil(agi);
+      finalRoll += agi;
     }
 
     if (ambush) {
@@ -287,6 +618,11 @@ function App() {
       }
     }
 
+    if (baseRoll === 10) {
+      // Critical Hit
+      damage *= 2;
+    }
+
     return {finalRoll, damage};
   }
 
@@ -295,7 +631,7 @@ function App() {
   return (
     <div>
       <div style={{display: "flex"}}>
-        <div style={{width: "400px"}}>
+        <div style={{width: window.innerWidth / 3}}>
           <table>
             <thead>
               <tr>
@@ -325,6 +661,7 @@ function App() {
             </tbody>
           </table>
           <br />
+
           <label>Weapon: </label>
           <WeaponSelector
             weapons={weapons}
@@ -332,42 +669,82 @@ function App() {
             setEquippedWeapon={setEquippedWeapon}
             setEquippedWeaponSkill={setEquippedWeaponSkill}
             setAmbushWeapon={setAmbushWeapon}
-            setActiveAttackType={setActiveAttackType}
-            setSlashDamageDisplay={setSlashDamageDisplay}
-            setStabDamageDisplay={setStabDamageDisplay}
-            setBluntSlashDamageDisplay={setBluntSlashDamageDisplay}
-            setBluntStabDamageDisplay={setBluntStabDamageDisplay}
           />
           <br />
+
           <label>Skill: </label>
-          <SkillSelector
-            skills={skillModifiers}
+          <SkillSelector 
+            skills={weaponSkills}
             equippedWeaponSkill={equippedWeaponSkill}
             setEquippedWeaponSkill={setEquippedWeaponSkill}
           />
           <br />
           <br />
+
           <div>
             <label>Ambush-Weapon: </label>
             <input type="checkbox" checked={ambushWeapon} onChange={() => setAmbushWeapon(!ambushWeapon)} />
           </div>
-          <div>
-            <label>Slash: </label>
-            <input type="text" value={slashDamageDisplay} onChange={(e) => setSlashDamageDisplay(e.target.value)} />
-          </div>
-          <div>
-            <label>Stab: </label>
-            <input type="text" value={stabDamageDisplay} onChange={(e) => setStabDamageDisplay(e.target.value)} />
-          </div>
-          <div>
-            <label>Blunt Slash: </label>
-            <input type="text" value={bluntSlashDamageDisplay} onChange={(e) => setBluntSlashDamageDisplay(e.target.value)} />
-          </div>
-          <div>
-            <label>Blunt Stab: </label>
-            <input type="text" value={bluntStabDamageDisplay} onChange={(e) => setBluntStabDamageDisplay(e.target.value)} />
-          </div>
+          <table>
+            <tbody>
+              <DamageInput
+                label = "Slash: "
+                property = "slashDamage"
+                equippedWeapon = {equippedWeapon}
+                setEquippedWeapon = {setEquippedWeapon}
+              />
+              <DamageInput
+                label = "Stab: "
+                property = "stabDamage"
+                equippedWeapon = {equippedWeapon}
+                setEquippedWeapon = {setEquippedWeapon}
+              />
+              <DamageInput
+                label = "Blunt Slash: "
+                property = "bluntSlashDamage"
+                equippedWeapon = {equippedWeapon}
+                setEquippedWeapon = {setEquippedWeapon}
+              />
+              <DamageInput
+                label = "Blunt Stab: "
+                property = "bluntStabDamage"
+                equippedWeapon = {equippedWeapon}
+                setEquippedWeapon = {setEquippedWeapon}
+              />
+              <DamageInput
+                label = "AP Slash: "
+                property = "apSlashDamage"
+                equippedWeapon = {equippedWeapon}
+                setEquippedWeapon = {setEquippedWeapon}
+              />
+              <DamageInput
+                label = "AP Stab: "
+                property = "apStabDamage"
+                equippedWeapon = {equippedWeapon}
+                setEquippedWeapon = {setEquippedWeapon}
+              />
+              <tr>
+                <td>STR Slash: </td>
+                <td><input type="number" value={equippedWeapon.strSlashMultiplier || 0} onChange={(e) => {
+                  const newValue = parseInt(e.target.value);
+                  const newWeapon = {...equippedWeapon};
+                  newWeapon.strSlashMultiplier = newValue;
+                  setEquippedWeapon(newWeapon);
+                }} /></td>
+              </tr>
+              <tr>
+                <td>STR Stab: </td>
+                <td><input type="number" value={equippedWeapon.strStabMultiplier || 0} onChange={(e) => {
+                  const newValue = parseInt(e.target.value);
+                  const newWeapon = {...equippedWeapon};
+                  newWeapon.strStabMultiplier = newValue;
+                  setEquippedWeapon(newWeapon);
+                }} /></td>
+              </tr>
+            </tbody>
+          </table>
           <br />
+
           {/* Radio buttons for body, limb, and head targeting */}
           <label>Body: </label>
           <input type="radio" checked={bodyTargeting} onChange={() => {setTargeting(targeting.body)}} />
@@ -387,44 +764,9 @@ function App() {
           <label>Stunned: </label>
           <input type="checkbox" checked={stunned} onChange={() => setStunned(!stunned)} />
           <br />
-          <button disabled={slashDamageDisplay === ''}
-          onClick={() => {
-            setActiveAttackType('slash');
-          }}>Slash</button>
-          <button disabled={stabDamageDisplay === ''}
-          onClick={() => {
-            setActiveAttackType('stab');
-          }}>Stab</button>
-          <button disabled={bluntSlashDamageDisplay === ''}
-          onClick={() => {
-            setActiveAttackType('bluntSlash');
-          }}>Blunt Slash</button>
-          <button disabled={bluntStabDamageDisplay === ''}
-          onClick={() => {
-            setActiveAttackType('bluntStab');
-          }}>Blunt Stab</button>
           <br />
         </div>
-        <div style={{width: "300px"}}>
-          <table>
-            <thead>
-              <tr>
-                <th style={{textAlign: "left"}}>Skill</th>
-                <th style={{textAlign: "left"}}>Modifier</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.keys(skillModifiers).map((skill) => {
-                return (
-                  <tr key={skill}>
-                    <td>{camelCaseToDisplayName(skill)}</td>
-                    <td><SkillInput skill={skill} skillModifiers={skillModifiers} setSkillModifiers={setSkillModifiers}/></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <SkillModifiers skillModifiers={skillModifiers} setSkillModifiers={setSkillModifiers} />
         <div style={{width: "300px"}}>
           <table>
             <thead>
@@ -456,43 +798,220 @@ function App() {
       </div>
       <br />
       <div>
-      <table style={{width: "1000px"}}>
+      <table style={{borderCollapse: 'collapse', width: '100%', minWidth: '850px'}}>
           <thead>
             <tr>
-              <th style={{width: "100px", textAlign: "left"}}>{camelCaseToDisplayName(activeAttackType)}</th>
-              <th style={{width: "100px"}}>1</th>
-              <th style={{width: "100px"}}>2</th>
-              <th style={{width: "100px"}}>3</th>
-              <th style={{width: "100px"}}>4</th>
-              <th style={{width: "100px"}}>5</th>
-              <th style={{width: "100px"}}>6</th>
-              <th style={{width: "100px"}}>7</th>
-              <th style={{width: "100px"}}>8</th>
-              <th style={{width: "100px"}}>9</th>
-              <th style={{width: "100px"}}>10</th>
+              <th style={{width: "100px", textAlign: "left"}}>Base Roll</th>
+              <th style={{width: "80px"}}>1</th>
+              <th style={{width: "80px", backgroundColor: "lightgray"}}>2</th>
+              <th style={{width: "80px"}}>3</th>
+              <th style={{width: "80px", backgroundColor: "lightgray"}}>4</th>
+              <th style={{width: "80px"}}>5</th>
+              <th style={{width: "80px", backgroundColor: "lightgray"}}>6</th>
+              <th style={{width: "80px"}}>7</th>
+              <th style={{width: "80px", backgroundColor: "lightgray"}}>8</th>
+              <th style={{width: "80px"}}>9</th>
+              <th style={{width: "80px", backgroundColor: "lightgray"}}>10</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td style={{border: "1px solid gray", width: "100px"}}>Final Roll</td>
+              <th style={{width: "100px", textAlign: "left"}}>Punch</th>
               {rolls.map((roll) => {
-                  return (
-                    <td key={roll} style={{border: "1px solid gray", width: "100px", textAlign: "center"}}>
-                      {calculateMeleeWeaponDamage(activeAttackType, roll).finalRoll}
-                    </td>
-                  )
+                const {finalRoll} = calculatePunchDamage(roll);
+                let displayRoll = finalRoll.toString();
+                if (roll === 1) displayRoll = 'MISS';
+                else if (roll === 10) displayRoll = 'CRIT';
+
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
+                if (stunned && (roll === 9 || roll === 10)) {
+                  backgroundColor = 'black'
+                }
+
+                return (
+                  <td
+                    key={roll}
+                    style={{border: "1px solid gray", width: "80px", textAlign: "center", backgroundColor}}
+                  >
+                    {displayRoll}
+                  </td>
+                )
               })}
             </tr>
             <tr>
-              <td style={{border: "1px solid gray", width: "100px"}}>Damage</td>
+              <td style={{width: "100px", textAlign: "left"}}>Damage</td>
               {rolls.map((roll) => {
-                  return (
-                    <td key={roll} style={{border: "1px solid gray", width: "100px", textAlign: "center"}}>
-                      {calculateMeleeWeaponDamage(activeAttackType, roll).damage}
-                    </td>
-                  )
+                const {damage} = calculatePunchDamage(roll);
+
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
+                if (stunned && (roll === 9 || roll === 10)) {
+                  backgroundColor = 'black'
+                }
+
+                return (
+                  <td
+                    key={roll}
+                    style={{border: "1px solid gray", width: "80px", textAlign: "center", backgroundColor}}
+                  >
+                    {damage}
+                  </td>
+                )
               })}
             </tr>
+            <tr style={{height: "10px"}}/>
+            <tr>
+              <th style={{width: "100px", textAlign: "left"}}>Kick</th>
+              {rolls.map((roll) => {
+                const {finalRoll} = calculateKickDamage(roll);
+                let displayRoll = finalRoll.toString();
+                if (roll === 1) displayRoll = 'MISS';
+                else if (roll === 10) displayRoll = 'CRIT';
+
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
+                if (stunned && (roll === 9 || roll === 10)) {
+                  backgroundColor = 'black'
+                }
+
+                return (
+                  <td
+                    key={roll}
+                    style={{border: "1px solid gray", width: "80px", textAlign: "center", backgroundColor}}
+                  >
+                    {displayRoll}
+                  </td>
+                )
+              })}
+            </tr>
+            <tr>
+              <td style={{width: "100px", textAlign: "left"}}>Damage</td>
+              {rolls.map((roll) => {
+                const {damage} = calculateKickDamage(roll);
+
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
+                if (stunned && (roll === 9 || roll === 10)) {
+                  backgroundColor = 'black'
+                }
+
+                return (
+                  <td
+                    key={roll}
+                    style={{border: "1px solid gray", width: "80px", textAlign: "center", backgroundColor}}
+                  >
+                    {damage}
+                  </td>
+                )
+              })}
+            </tr>
+            <tr style={{height: "10px"}}/>
+            <tr>
+              <th style={{width: "100px", textAlign: "left"}}>Heavy Punch</th>
+              {rolls.map((roll) => {
+                const {finalRoll} = calculateHeavyPunchDamage(roll);
+                let displayRoll = finalRoll.toString();
+                if (roll === 1) displayRoll = 'MISS';
+                else if (roll === 10) displayRoll = 'CRIT';
+
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
+                if (stunned && (roll === 9 || roll === 10)) {
+                  backgroundColor = 'black'
+                }
+
+                return (
+                  <td
+                    key={roll}
+                    style={{border: "1px solid gray", width: "80px", textAlign: "center", backgroundColor}}
+                  >
+                    {displayRoll}
+                  </td>
+                )
+              })}
+            </tr>
+            <tr>
+              <td style={{width: "100px", textAlign: "left"}}>Damage</td>
+              {rolls.map((roll) => {
+                const {damage} = calculateHeavyPunchDamage(roll);
+
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
+                if (stunned && (roll === 9 || roll === 10)) {
+                  backgroundColor = 'black'
+                }
+
+                return (
+                  <td
+                    key={roll}
+                    style={{border: "1px solid gray", width: "80px", textAlign: "center", backgroundColor}}
+                  >
+                    {damage}
+                  </td>
+                )
+              })}
+            </tr>
+            <tr style={{height: "10px"}}/>
+            <tr>
+              <th style={{width: "100px", textAlign: "left"}}>Grapple</th>
+              {rolls.slice(0, 8).map((roll) => {
+                const finalRoll = calculateGrapple(roll);
+                let displayRoll = finalRoll.toString();
+                if (roll === 1) displayRoll = 'MISS';
+                else if (roll === 8) displayRoll = 'CRIT';
+
+                let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
+                if (stunned && (roll === 7 || roll === 8)) {
+                  backgroundColor = 'black'
+                }
+
+                return (
+                  <td
+                    key={roll}
+                    style={{border: "1px solid gray", width: "80px", textAlign: "center", backgroundColor}}
+                  >
+                    {displayRoll}
+                  </td>
+                )
+              })}
+            </tr>
+            {equippedWeapon.slashDamage && <tr style={{height: "10px"}}/>}
+            {equippedWeapon.slashDamage && <MeleeWeaponTableRows
+              label="Slash"
+              calculateDamage={(roll: number) => calculateMeleeWeaponDamage('slash', roll)}
+              rolls={rolls}
+              stunned={stunned}
+            />}
+            {equippedWeapon.stabDamage && <tr style={{height: "10px"}}/>}
+            {equippedWeapon.stabDamage && <MeleeWeaponTableRows
+              label="Stab"
+              calculateDamage={(roll: number) => calculateMeleeWeaponDamage('stab', roll)}
+              rolls={rolls}
+              stunned={stunned}
+            />}
+            {equippedWeapon.bluntSlashDamage && <tr style={{height: "10px"}}/>}
+            {equippedWeapon.bluntSlashDamage && <MeleeWeaponTableRows
+              label="Blunt Slash"
+              calculateDamage={(roll: number) => calculateMeleeWeaponDamage('bluntSlash', roll)}
+              rolls={rolls}
+              stunned={stunned}
+            />}
+            {equippedWeapon.bluntStabDamage && <tr style={{height: "10px"}}/>}
+            {equippedWeapon.bluntStabDamage && <MeleeWeaponTableRows
+              label="Blunt Stab"
+              calculateDamage={(roll: number) => calculateMeleeWeaponDamage('bluntStab', roll)}
+              rolls={rolls}
+              stunned={stunned}
+            />}
+            {equippedWeapon.apSlashDamage && <tr style={{height: "10px"}}/>}
+            {equippedWeapon.apSlashDamage && <MeleeWeaponTableRows
+              label="AP Slash"
+              calculateDamage={(roll: number) => calculateMeleeWeaponDamage('apSlash', roll)}
+              rolls={rolls}
+              stunned={stunned}
+            />}
+            {equippedWeapon.apStabDamage && <tr style={{height: "10px"}}/>}
+            {equippedWeapon.apStabDamage && <MeleeWeaponTableRows
+              label="AP Stab"
+              calculateDamage={(roll: number) => calculateMeleeWeaponDamage('apStab', roll)}
+              rolls={rolls}
+              stunned={stunned}
+            />}
           </tbody>
         </table>
       </div>
@@ -523,36 +1042,12 @@ function StatInput({ stat, statGroup, setStat }: {
   )
 }
 
-function SkillInput({ skill, skillModifiers, setSkillModifiers }: {
-  skill: string,
-  skillModifiers: {[key: string]: number},
-  setSkillModifiers: React.Dispatch<React.SetStateAction<{[key: string]: number}>>
-}) {
-  return (
-      <input
-        style={{width: "40px"}}
-        type="number"
-        value={skillModifiers[skill]}
-        onChange={(e) => {
-          const newSkillModifiers = {...skillModifiers};
-          newSkillModifiers[skill] = parseInt(e.target.value);
-          setSkillModifiers(newSkillModifiers);
-        }}
-      />
-  )
-}
-
 interface WeaponSelectorProps {
   weapons: Weapons,
   equippedWeapon: Weapon,
   setEquippedWeapon: React.Dispatch<React.SetStateAction<Weapon>>
   setEquippedWeaponSkill: React.Dispatch<React.SetStateAction<string>>
   setAmbushWeapon: React.Dispatch<React.SetStateAction<boolean>>
-  setActiveAttackType: React.Dispatch<React.SetStateAction<string>>
-  setSlashDamageDisplay: React.Dispatch<React.SetStateAction<string>>
-  setStabDamageDisplay: React.Dispatch<React.SetStateAction<string>>
-  setBluntSlashDamageDisplay: React.Dispatch<React.SetStateAction<string>>
-  setBluntStabDamageDisplay: React.Dispatch<React.SetStateAction<string>>
 }
 
 function WeaponSelector({
@@ -560,52 +1055,13 @@ function WeaponSelector({
   equippedWeapon,
   setEquippedWeapon,
   setEquippedWeaponSkill,
-  setAmbushWeapon,
-  setActiveAttackType,
-  setStabDamageDisplay,
-  setSlashDamageDisplay,
-  setBluntSlashDamageDisplay,
-  setBluntStabDamageDisplay
+  setAmbushWeapon
 }: WeaponSelectorProps) {
   const handleSelectChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedWeapon = weapons[event.target.value];
     setEquippedWeapon(selectedWeapon);
     setEquippedWeaponSkill(selectedWeapon.skill);
     setAmbushWeapon(selectedWeapon.ambushWeapon ? true : false);
-
-    if (selectedWeapon.slashDamage) {
-      setActiveAttackType('slash');
-    } else if (selectedWeapon.stabDamage) {
-      setActiveAttackType('stab');
-    } else if (selectedWeapon.bluntSlashDamage) {
-      setActiveAttackType('bluntSlash');
-    } else if (selectedWeapon.bluntStabDamage) {
-      setActiveAttackType('bluntStab');
-    }
-
-    if (selectedWeapon.slashDamage) {
-      setSlashDamageDisplay(selectedWeapon.slashDamage.join(', '));
-    } else {
-      setSlashDamageDisplay('');
-    }
-
-    if (selectedWeapon.stabDamage) {
-      setStabDamageDisplay(selectedWeapon.stabDamage.join(', '));
-    } else {
-      setStabDamageDisplay('');
-    }
-
-    if (selectedWeapon.bluntSlashDamage) {
-      setBluntSlashDamageDisplay(selectedWeapon.bluntSlashDamage.join(', '));
-    } else {
-      setBluntSlashDamageDisplay('');
-    }
-
-    if (selectedWeapon.bluntStabDamage) {
-      setBluntStabDamageDisplay(selectedWeapon.bluntStabDamage.join(', '));
-    } else {
-      setBluntStabDamageDisplay('');
-    }
   };
 
   return (
@@ -618,22 +1074,187 @@ function WeaponSelector({
 }
 
 function SkillSelector({ skills, equippedWeaponSkill, setEquippedWeaponSkill }: {
-  skills: {[key: string]: number},
+  skills: string[],
   equippedWeaponSkill: string,
   setEquippedWeaponSkill: React.Dispatch<React.SetStateAction<string>>
 }) {
-  const handleSelectChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setEquippedWeaponSkill(event.target.value);
-  };
-
   return (
-    <select value={equippedWeaponSkill} onChange={handleSelectChange}>
-      <option value="">None</option>
-      {Object.keys(skills).map((skillName) => {
-        const displayName = camelCaseToDisplayName(skillName);
-        return <option key={skillName} value={skillName}>{displayName}</option>
+    <select value={equippedWeaponSkill} onChange={(e) => setEquippedWeaponSkill(e.target.value)}>
+      {skills.map((skill) => {
+        return <option
+          key={skill}
+          value={skill}>{pascalCaseToDisplayName(skill)}
+        </option>
       })}
     </select>
+  )
+}
+
+interface DamageInputProps {
+  label: string,
+  property: string,
+  equippedWeapon: Weapon,
+  setEquippedWeapon: React.Dispatch<React.SetStateAction<Weapon>>
+}
+
+function DamageInput({label, property, equippedWeapon, setEquippedWeapon }: DamageInputProps) {
+  const damageArray = equippedWeapon[property] as number[] || [];
+
+  const defaultInput = damageArray.join(', ');
+  const [inputValue, setInputValue] = useState(defaultInput);
+
+  useEffect(() => {
+    const a = equippedWeapon[property] as number[] || [];
+    setInputValue(a.join(', ') || '');
+  }, [equippedWeapon, property]);
+
+  const handleBlur = () => {
+    const newValues = inputValue.split(',')
+      .map((v: string) => parseInt(v.trim()))
+      .filter((v: number) => !isNaN(v));
+    const newWeapon = {...equippedWeapon};
+    newWeapon[property] = newValues;
+
+    if (newValues.length === 0) {
+      delete newWeapon[property];
+    }
+
+    setEquippedWeapon(newWeapon);
+
+    setInputValue(newValues.join(', '));
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur();
+    }
+  }
+
+  return (
+    <tr>
+      <td>{label}</td>
+      <td>
+        <input
+          type = "text"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+        />
+      </td>
+    </tr>
+  )
+}
+
+function SkillModifiers({ skillModifiers, setSkillModifiers }: {
+  skillModifiers: SkillModifiers,
+  setSkillModifiers: React.Dispatch<React.SetStateAction<SkillModifiers>>
+} ) {
+
+  return (
+    <div style={{width: window.innerWidth / 3}}>
+      <table>
+        <thead>
+          <tr>
+            <th style={{textAlign: "left"}}>Skill</th>
+            <th style={{textAlign: "left"}}>Modifier</th>
+            <th style={{textAlign: "left"}}>Active</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.keys(skillModifiers).map((skill) => {
+            const skillActive = skillModifiers[skill].active === undefined || skillModifiers[skill].active;
+            return (
+              <tr key={skill}>
+                <td>{pascalCaseToDisplayName(skill)}</td>
+                <td>
+                  <input
+                    style={{width: "40px"}}
+                    type='number'
+                    value={
+                      skillActive ? skillModifiers[skill].modifier : getHighestSkillModifier(skill, skillModifiers)
+                    }
+                    disabled={!skillActive}
+                    onChange={(e) => {
+                      const newSkillModifiers = {...skillModifiers};
+                      newSkillModifiers[skill].modifier = parseInt(e.target.value);
+                      setSkillModifiers(newSkillModifiers);
+                    }}
+                  />
+                </td>
+                <td style={{textAlign: 'center'}}>
+                  {
+                    skillModifiers[skill].active !== undefined &&
+                    <input type="checkbox" checked={skillModifiers[skill].active} onChange={() => {
+                      const newSkillModifiers = {...skillModifiers};
+                      newSkillModifiers[skill].active = !newSkillModifiers[skill].active;
+                      setSkillModifiers(newSkillModifiers);
+                    }} />
+                  }
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+interface MeleeWeaponTableRowsProps {
+  label: string,
+  calculateDamage: (roll: number) => {finalRoll: number, damage: number},
+  rolls: number[],
+  stunned?: boolean
+}
+
+const MeleeWeaponTableRows = ({ label, calculateDamage, rolls, stunned }: MeleeWeaponTableRowsProps) => {
+  return (
+    <>
+      <tr>
+        <th style={{width: "100px", textAlign: "left"}}>{label}</th>
+        {rolls.map((roll) => {
+          const {finalRoll} = calculateDamage(roll);
+          let displayRoll = finalRoll.toString();
+          if (roll === 1) displayRoll = 'MISS';
+          else if (roll === 10) displayRoll = 'CRIT';
+
+          let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
+          if (stunned && (roll === 9 || roll === 10)) {
+            backgroundColor = 'black'
+          }
+
+          return (
+            <td
+              key={roll}
+              style={{border: "1px solid gray", width: "80px", textAlign: "center", backgroundColor}}
+            >
+              {displayRoll}
+            </td>
+          )
+        })}
+      </tr>
+      <tr>
+        <td style={{width: "100px", textAlign: "left"}}>Damage</td>
+        {rolls.map((roll) => {
+          const {damage} = calculateDamage(roll);
+
+          let backgroundColor = roll % 2 === 0 ? 'lightgray' : 'white';
+          if (stunned && (roll === 9 || roll === 10)) {
+            backgroundColor = 'black'
+          }
+
+          return (
+            <td
+              key={roll}
+              style={{border: "1px solid gray", width: "80px", textAlign: "center", backgroundColor}}
+            >
+              {damage}
+            </td>
+          )
+        })}
+      </tr>
+    </>
   )
 }
 
