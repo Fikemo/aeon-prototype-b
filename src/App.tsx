@@ -38,19 +38,25 @@ const getStatTotal = (stat: string, stats: IStats): number => {
   )
 }
 
+const targeting = {
+  body: 0,
+  limb: 1,
+  head: 2,
+}
+
 const weaponSkills = {
-  none: 0,
-  daggers: 1,
-  standardSwords: 2,
-  cuttingSwords: 3,
-  thrustingSwords: 4,
-  twoHandedSwords: 5,
-  flails: 6,
-  maces: 7,
-  oneHandedAxes: 8,
-  polearms: 9,
-  spears: 10,
-  bows: 11,
+  none: "none",
+  daggers: "daggers",
+  standardSwords: "standardSwords",
+  cuttingSwords: "cuttingSwords",
+  thrustingSwords: "thrustingSwords",
+  twoHandedSwords: "twoHandedSwords",
+  flails: "flails",
+  maces: "maces",
+  oneHandedAxes: "oneHandedAxes",
+  polearms: "polearms",
+  spears: "spears",
+  bows: "bows",
 }
 
 const attackTypes: {[key: string]: number} = {
@@ -70,7 +76,7 @@ interface IAttack {
 
 interface IWeapon {
   name: string,
-  skill: number,
+  skill: string,
   attacks: IAttack[],
   durability?: number,
   strikes?: number,
@@ -191,7 +197,7 @@ const getHighestSkillModifier = (skill: string, skillModifiers: ISkillModifiers)
   let highestModifier = skillModifiers[skill].value;
   let parent = skillModifiers[skill].parent;
   while (parent) {
-    highestModifier = Math.max(highestModifier, skillModifiers[parent].value);
+    highestModifier += skillModifiers[parent].value;
     parent = skillModifiers[parent].parent;
   }
   return highestModifier;
@@ -315,9 +321,260 @@ function App() {
   });
 
   const defaultWeapon = weapons.dagger;
-  const [equippedWeapon, setEquippedWeapon] = useState(defaultWeapon);
+  const [equippedWeapon, setEquippedWeapon] = useState<IWeapon>(defaultWeapon);
 
   const [weaponDialogOpen, setWeaponDialogOpen] = useState(false);
+
+  const [bodyTargeting, setBodyTargeting] = useState(false);
+  const [limbTargeting, setLimbTargeting] = useState(false); // -1 to rolls
+  const [headTargeting, setHeadTargeting] = useState(false); // -2 to rolls (-3 for stabs)
+
+  const setTargeting = (target: number) => {
+    setBodyTargeting(target === targeting.body);
+    setLimbTargeting(target === targeting.limb);
+    setHeadTargeting(target === targeting.head);
+  }
+
+  const [ambush, setAmbush] = useState(false);      // deals 2x damage
+  const [inspired, setInspired] = useState(false);  // +1 to rolls
+  
+  const [slowed, setSlowed] = useState(false);      // AGI / 2
+  const [stunned, setStunned] = useState(false);    // Lowered a die type
+
+  const calculatePunchDamages = useCallback(() => {
+    // return [{finalRoll: number, damage: number},...]
+    const punchDamages = [];
+    for (let i = 1; i <= 10; i++) {
+      const baseRoll = i;
+      let damage = getStatTotal(statTypes.STR, stats);
+      let finalRoll = baseRoll;
+      if (baseRoll === 1) {
+        // Critical miss
+        damage = 0;
+      } else if (baseRoll === 10) {
+        // Critical hit
+        damage *= 2;
+      } else {
+        const skillModifier = skillModifiers.unarmed.value;
+        if (skillModifier > 0) {
+          finalRoll += skillModifier;
+        }
+
+        if (inspired) {
+          finalRoll += 1;
+        }
+
+        if (limbTargeting) {
+          finalRoll -= 1;
+        } else if (headTargeting) {
+          finalRoll -= 2;
+        }
+
+        if (abilities.armorImmobility.active) {
+          finalRoll -= 1;
+        }
+
+        // Add AGI modifiers
+        let agi = getStatTotal(statTypes.AGI, stats);
+        if (slowed) {
+          agi = Math.floor(agi / 2);
+        }
+        agi = Math.ceil(agi);
+        finalRoll += agi;
+      }
+
+      if (ambush) {
+        damage *= 2;
+
+        if (abilities.masterAmbusher.active) {
+          damage *= 2;
+        } else if (abilities.ambusher.active) {
+          damage *= 1.5;
+        }
+      }
+
+      punchDamages.push({finalRoll, damage});
+    }
+
+    return punchDamages;
+
+  }, [abilities.ambusher.active, abilities.masterAmbusher.active, abilities.armorImmobility.active, ambush, inspired, limbTargeting, headTargeting, slowed, stats, skillModifiers.unarmed.value]);
+
+  const calculateSlashDamages = useCallback((attack: IAttack) => {
+    const slashDamages = [];
+    const damageArray = attack.variance;
+    const str = getStatTotal(statTypes.STR, stats);
+    for (let i = 1; i <= 10; i++) {
+      const baseRoll = i;
+      let damage = 0;
+      let finalRoll = baseRoll;
+
+      const critSuccess = baseRoll === 10;
+
+      if (baseRoll === 1) {
+        // Critical miss
+        damage = 0;
+      } else {
+
+        if (critSuccess) {
+          damage = damageArray[damageArray.length - 1];
+        } else {
+          const damageLookupRow = damageArray.length - 1;
+          const damageIndex = damageLookup[damageLookupRow]?.[Math.min(baseRoll, 8) -1];
+          damage = damageArray[damageIndex];
+        }
+
+        if (attack.strAdd) {
+          damage += str * attack.strAdd;
+        } else if (attack.blunt) {
+          damage += str;
+        }
+
+        const hasSkillModifier = skillModifiers[equippedWeapon.skill] !== undefined;
+        if (hasSkillModifier) {
+          const skillModifier = getHighestSkillModifier(equippedWeapon.skill, skillModifiers);
+          finalRoll += skillModifier;
+        }
+
+        if (inspired) {
+          finalRoll += 1;
+        }
+
+        if (limbTargeting) {
+          finalRoll -= 1;
+        } else if (headTargeting) {
+          finalRoll -= 2;
+        }
+
+        if (abilities.armorImmobility.active) {
+          finalRoll -= 1;
+        }
+
+        // Add AGI modifiers
+        let agi = getStatTotal(statTypes.AGI, stats);
+        if (slowed) {
+          agi = Math.floor(agi / 2);
+        }
+        agi = Math.ceil(agi);
+        finalRoll += agi;
+      }
+
+      if (ambush) {
+        damage *= 2;
+
+        if (abilities.masterAmbusher.active) {
+          damage *= 2;
+        } else if (abilities.ambusher.active) {
+          damage *= 1.5;
+        }
+      }
+
+      if (critSuccess) {
+        damage *= 2;
+      }
+
+      slashDamages.push({finalRoll, damage});
+    }
+
+    return slashDamages;
+  }, [abilities.ambusher.active, abilities.armorImmobility.active, abilities.masterAmbusher.active, ambush, equippedWeapon.skill, headTargeting, inspired, limbTargeting, skillModifiers, slowed, stats]);
+
+  const calculateStabDamages = useCallback((attack: IAttack) => {
+    const stabDamages = [];
+    const damageArray = attack.variance;
+    const str = getStatTotal(statTypes.STR, stats);
+    for (let i = 1; i <= 10; i++) {
+      const baseRoll = i;
+      let damage = 0;
+      let finalRoll = baseRoll;
+
+      const critSuccess = baseRoll === 10;
+
+      if (baseRoll === 1) {
+        // Critical miss
+        damage = 0;
+      } else {
+
+        if (critSuccess) {
+          damage = damageArray[damageArray.length - 1];
+        } else {
+          const damageLookupRow = damageArray.length - 1;
+          const damageIndex = damageLookup[damageLookupRow]?.[Math.min(baseRoll, 8) -1];
+          damage = damageArray[damageIndex];
+        }
+
+        if (attack.strAdd) {
+          damage += str * attack.strAdd;
+        } else if (attack.blunt) {
+          damage += str;
+        }
+
+        const hasSkillModifier = skillModifiers[equippedWeapon.skill] !== undefined;
+        if (hasSkillModifier) {
+          const skillModifier = getHighestSkillModifier(equippedWeapon.skill, skillModifiers);
+          finalRoll += skillModifier;
+        }
+
+        if (inspired) {
+          finalRoll += 1;
+        }
+
+        if (limbTargeting) {
+          finalRoll -= 1;
+        } else if (headTargeting) {
+          finalRoll -= 3;
+        }
+
+        if (abilities.armorImmobility.active) {
+          finalRoll -= 1;
+        }
+
+        // Add AGI modifiers
+        let agi = getStatTotal(statTypes.AGI, stats);
+        if (slowed) {
+          agi = Math.floor(agi / 2);
+        }
+        agi = Math.ceil(agi);
+        finalRoll += agi;
+      }
+
+      if (ambush) {
+        damage *= 2;
+
+        if (abilities.masterAmbusher.active) {
+          damage *= 2;
+        } else if (abilities.ambusher.active) {
+          damage *= 1.5;
+        }
+      }
+
+      if (critSuccess) {
+        damage *= 2;
+      }
+
+      stabDamages.push({finalRoll, damage});
+    }
+
+    return stabDamages;
+  }, [abilities.ambusher.active, abilities.armorImmobility.active, abilities.masterAmbusher.active, ambush, equippedWeapon.skill, headTargeting, inspired, limbTargeting, skillModifiers, slowed, stats]);
+
+  const calculateRangedDamages = useCallback((attack: IAttack) => {
+
+    return [];
+  }, []);
+
+  const calculateAttackDamages = useCallback((attack: IAttack) => {
+    switch (attack.attackType) {
+      case attackTypes.slash:
+        return calculateSlashDamages(attack);
+      case attackTypes.stab:
+        return calculateStabDamages(attack);
+      case attackTypes.ranged:
+        return calculateRangedDamages(attack);
+      default:
+        return [];
+    }
+  }, [calculateSlashDamages, calculateStabDamages, calculateRangedDamages]);
 
   // -------------------------------------------------------------------------------------------------------------------
   // -------------------------------------------------------------------------------------------------------------------
@@ -346,9 +603,77 @@ function App() {
                 </tr>
               </tbody>
             </table>
+            <WeaponPropertyInput
+              label="Durability"
+              value={equippedWeapon.durability || 0}
+              setValue={(value) => setEquippedWeapon((prev) => ({...prev, durability: value}))}
+            />
+            <WeaponPropertyInput
+              label="Strikes"
+              value={equippedWeapon.strikes || 0}
+              setValue={(value) => setEquippedWeapon((prev) => ({...prev, strikes: value}))}
+            />
+            <WeaponPropertyInput
+              label="Reach"
+              value={equippedWeapon.reach || 0}
+              setValue={(value) => setEquippedWeapon((prev) => ({...prev, reach: value}))}
+            />
+            <WeaponPropertyInput
+              label="Weight"
+              value={equippedWeapon.weight}
+              setValue={(value) => setEquippedWeapon((prev) => ({...prev, weight: value}))}
+            />
             <WeaponAttackTable equippedWeapon={equippedWeapon} setEquippedWeapon={setEquippedWeapon}/>
             <button onClick={() => setWeaponDialogOpen(true)}>+</button>
             <AddWeaponAttackDialog open={weaponDialogOpen} setOpen={setWeaponDialogOpen} setWeapon={setEquippedWeapon} />
+          </div>
+          <div>
+            <label>Ambush: </label>
+            <input
+              type="checkbox"
+              checked={ambush}
+              onChange={(e) => setAmbush(e.target.checked)}
+            />
+            <label>Inspired: </label>
+            <input
+              type="checkbox"
+              checked={inspired}
+              onChange={(e) => setInspired(e.target.checked)}
+            />
+          </div>
+          <div>
+            <label>Slowed: </label>
+            <input
+              type="checkbox"
+              checked={slowed}
+              onChange={(e) => setSlowed(e.target.checked)}
+            />
+            <label>Stunned: </label>
+            <input
+              type="checkbox"
+              checked={stunned}
+              onChange={(e) => setStunned(e.target.checked)}
+            />
+          </div>
+          <div>
+            <label>Body: </label>
+            <input
+              type="radio"
+              checked={bodyTargeting}
+              onChange={() => setTargeting(targeting.body)}
+            />
+            <label>Limb: </label>
+            <input
+              type="radio"
+              checked={limbTargeting}
+              onChange={() => setTargeting(targeting.limb)}
+            />
+            <label>Head: </label>
+            <input
+              type="radio"
+              checked={headTargeting}
+              onChange={() => setTargeting(targeting.head)}
+            />
           </div>
         </div>
         <div style={{marginRight: "5px"}}>
@@ -359,7 +684,51 @@ function App() {
         </div>
       </div>
       <div> {/* This is where the roll tables will go */}
-
+        <table style={{width: "100%"}}>
+          <thead>
+            <tr>
+              <th>Roll</th>
+              <th style={{width: "100px"}}>1</th>
+              <th style={{width: "100px", backgroundColor: "lightgray"}}>2</th>
+              <th style={{width: "100px"}}>3</th>
+              <th style={{width: "100px", backgroundColor: "lightgray"}}>4</th>
+              <th style={{width: "100px"}}>5</th>
+              <th style={{width: "100px", backgroundColor: "lightgray"}}>6</th>
+              <th style={{width: "100px"}}>7</th>
+              <th style={{width: "100px", backgroundColor: "lightgray"}}>8</th>
+              <th style={{width: "100px"}}>9</th>
+              <th style={{width: "100px", backgroundColor: "lightgray"}}>10</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colSpan={11} style={{height: "10px"}}></td>
+            </tr>
+            <tr>
+              <th style={{textAlign: "left"}}>Punch</th>
+              {calculatePunchDamages().map((damage, index) => (
+                <td key={index} style={{backgroundColor: index % 2 === 0 ? "white" : "lightgray", textAlign: "center"}}>
+                  {damage.finalRoll}
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <td>Damage</td>
+              {calculatePunchDamages().map((damage, index) => (
+                <td key={index} style={{backgroundColor: index % 2 === 0 ? "white" : "lightgray", textAlign: "center"}}>
+                  {damage.damage}
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <td colSpan={11} style={{height: "10px"}}></td>
+            </tr>
+            <AttackTableRows
+              equippedWeapon={equippedWeapon}
+              calculateAttackDamages={calculateAttackDamages}
+            />
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -552,7 +921,7 @@ function WeaponSelector({ weapons, equippedWeapon, setEquippedWeapon }: IWeaponS
 }
 
 interface IWeaponSkillSelectorProps {
-  weaponSkills: { [key: string]: number }
+  weaponSkills: { [key: string]: string }
   equippedWeapon: IWeapon,
   setEquippedWeapon: React.Dispatch<React.SetStateAction<IWeapon>>,
 }
@@ -572,6 +941,25 @@ function WeaponSkillSelector({ weaponSkills, equippedWeapon, setEquippedWeapon }
         <option key={key} value={key}>{pascalCaseToDisplayName(key)}</option>
       ))}
     </select>
+  )
+}
+
+interface IWeaponPropertyInputProps {
+  label: string,
+  value: number,
+  setValue: (value: number) => void,
+}
+
+function WeaponPropertyInput({ label, value, setValue }: IWeaponPropertyInputProps) {
+  return (
+    <div>
+      <label>{label}: </label>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => setValue(parseInt(e.target.value))}
+      />
+    </div>
   )
 }
 
@@ -677,38 +1065,46 @@ function AddWeaponAttackDialog({ open, setOpen, setWeapon }: IAddWeaponAttackDia
   }
 
   return (
-    <div style={{display: open ? "block" : "none", position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", backgroundColor: "white", padding: "10px", border: "1px solid black"}}>
-      <div>
-        <label>Attack Type: </label>
-        <select value={attackType} onChange={(e) => setAttackType(parseInt(e.target.value))}>
-          {Object.keys(attackTypes).map((key) => (
-            <option key={key} value={attackTypes[key]}>{pascalCaseToDisplayName(key)}</option>
-          ))}
-        </select>
+    <>
+      {/* Semi transparent gray background*/}
+      <div
+        style={{display: open ? "block" : "none", position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0, 0, 0, 0.5)"}}
+        onClick={() => setOpen(false)}
+      />
+      {/* Dialog */}
+      <div style={{display: open ? "block" : "none", position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", backgroundColor: "white", padding: "10px", border: "1px solid black"}}>
+        <div style={{margin: "5px"}}>
+          <label>Attack Type: </label>
+          <select value={attackType} onChange={(e) => setAttackType(parseInt(e.target.value))}>
+            {Object.keys(attackTypes).map((key) => (
+              <option key={key} value={attackTypes[key]}>{pascalCaseToDisplayName(key)}</option>
+            ))}
+          </select>
+        </div>
+        <div style={{margin: "5px"}}>
+          <label>Variance: </label>
+          <input type="text" value={variance} onChange={(e) => setVariance(e.target.value)} />
+        </div>
+        <div style={{margin: "5px"}}>
+          <label>Blunt: </label>
+          <input type="checkbox" checked={blunt} onChange={(e) => setBlunt(e.target.checked)} />
+        </div>
+        <div style={{margin: "5px"}}>
+          <label>AP: </label>
+          <input type="checkbox" checked={ap} onChange={(e) => setAP(e.target.checked)} />
+        </div>
+        <div style={{margin: "5px"}}>
+          <label>STR Add: </label>
+          <input type="number" value={strAdd} onChange={(e) => setStrAdd(parseInt(e.target.value))} />
+        </div>
+        <div style={{margin: "5px"}}>
+          <label>Ranges: </label>
+          <input type="text" value={ranges} onChange={(e) => setRanges(e.target.value)} />
+        </div>
+        <button onClick={handleAddAttack}>Add</button>
+        <button onClick={() => setOpen(false)}>Cancel</button>
       </div>
-      <div>
-        <label>Variance: </label>
-        <input type="text" value={variance} onChange={(e) => setVariance(e.target.value)} />
-      </div>
-      <div>
-        <label>Blunt: </label>
-        <input type="checkbox" checked={blunt} onChange={(e) => setBlunt(e.target.checked)} />
-      </div>
-      <div>
-        <label>AP: </label>
-        <input type="checkbox" checked={ap} onChange={(e) => setAP(e.target.checked)} />
-      </div>
-      <div>
-        <label>STR Add: </label>
-        <input type="number" value={strAdd} onChange={(e) => setStrAdd(parseInt(e.target.value))} />
-      </div>
-      <div>
-        <label>Ranges: </label>
-        <input type="text" value={ranges} onChange={(e) => setRanges(e.target.value)} />
-      </div>
-      <button onClick={handleAddAttack}>Add</button>
-      <button onClick={() => setOpen(false)}>Cancel</button>
-    </div>
+    </>
   )
 }
 
@@ -738,6 +1134,7 @@ function SkillModifierRow({skill, skillModifiers, setSkillModifiers}: ISkillModi
         <input
           type="number"
           style={{width: "50px"}}
+          min={0}
           value={value}
           onChange={(e) => setValue(parseInt(e.target.value))}
         />
@@ -826,6 +1223,55 @@ function AbilityTable({abilities, setAbilities}: IAbilityTableProps) {
         ))}
       </tbody>
     </table>
+  )
+}
+
+function FinalRollRow({ label, damages}: {label: string, damages: {finalRoll: number, damage: number}[]}) {
+  return (
+    <tr>
+      <th style={{textAlign: "left"}}>{label}</th>
+      {damages.map((damage, index) => (
+        <td key={index} style={{backgroundColor: index % 2 === 0 ? "white" : "lightgray", textAlign: "center"}}>
+          {damage.finalRoll}
+        </td>
+      ))}
+    </tr>
+  )
+}
+
+function DamageRow({ damages }: {damages: {finalRoll: number, damage: number}[]}) {
+  return (
+    <tr>
+      <td>Damage</td>
+      {damages.map((damage, index) => (
+        <td key={index} style={{backgroundColor: index % 2 === 0 ? "white" : "lightgray", textAlign: "center"}}>
+          {damage.damage}
+        </td>
+      ))}
+    </tr>
+  )
+}
+
+interface IAttackTableRowsProps {
+  equippedWeapon: IWeapon,
+  calculateAttackDamages: (attack: IAttack) => {finalRoll: number, damage: number}[],
+}
+
+function AttackTableRows({ equippedWeapon, calculateAttackDamages }: IAttackTableRowsProps) {
+  const attackDamages = equippedWeapon.attacks.map((attack) => calculateAttackDamages(attack));
+
+  return (
+    <>
+      {equippedWeapon.attacks.map((attack, index) => (
+        <React.Fragment key={index}>
+          <FinalRollRow label={attack.attackType === 0 ? "Slash" : (attack.attackType === 1 ? "Stab" : "Shoot")} damages={attackDamages[index]} />
+          <DamageRow damages={attackDamages[index]} />
+          <tr>
+            <td colSpan={11} style={{height: "10px"}}></td>
+          </tr>
+        </React.Fragment>
+      ))}
+    </>
   )
 }
 
