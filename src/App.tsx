@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import './App.css'
 
 const pascalCaseToDisplayName = (str: string) => {
@@ -54,6 +54,7 @@ const weaponSkills = {
   flails: "flails",
   maces: "maces",
   oneHandedAxes: "oneHandedAxes",
+  staffs: "staffs",
   greatSwords: "greatSwords",
   poleaxes: "poleaxes",
   glaives: "glaives",
@@ -288,30 +289,31 @@ function App() {
   const [skillModifiers, setSkillModifiers] = useState<ISkillModifiers>({
     unarmed: { value: 0 },
     
-    swords: { value: 0 },
+    swords: { value: -4 },
     daggers: { value: 0, parent: 'swords' },
-    standardSwords: { value: 0, parent: 'swords' },
-    cuttingSwords: { value: 0, parent: 'swords' },
-    thrustingSwords: { value: 0, parent: 'swords' },
-    twoHandedSwords: { value: 0, parent: 'swords' },
+    standardSwords: { value: -4, parent: 'swords' },
+    cuttingSwords: { value: -4, parent: 'swords' },
+    thrustingSwords: { value: -4, parent: 'swords' },
+    twoHandedSwords: { value: -4, parent: 'swords' },
 
-    hafted: { value: 0},
-    chain: { value: 0, parent: 'hafted' },
-    flails: { value: 0, parent: 'chain' },
-    striking: { value: 0, parent: 'hafted' },
+    hafted: { value: -4},
+    chain: { value: -4, parent: 'hafted' },
+    flails: { value: -4, parent: 'chain' },
+    striking: { value: -4, parent: 'hafted' },
     maces: { value: 0, parent: 'striking' },
-    oneHandedAxes: { value: 0, parent: 'striking' },
+    oneHandedAxes: { value: -1, parent: 'striking' },
 
-    polearms: { value: 0 },
-    greatSwords: { value: 0, parent: 'polearms' },
-    spears: { value: 0, parent: 'polearms' },
-    poleaxes: { value: 0, parent: 'polearms' },
-    glaives: { value: 0, parent: 'polearms' },
-    pikes: { value: 0, parent: 'polearms' },
+    polearms: { value: -5 },
+    staffs: { value: 0, parent: 'polearms'},
+    greatSwords: { value: -5, parent: 'polearms' },
+    spears: { value: -5, parent: 'polearms' },
+    poleaxes: { value: -5, parent: 'polearms' },
+    glaives: { value: -5, parent: 'polearms' },
+    pikes: { value: -5, parent: 'polearms' },
 
-    pistols: { value: 0 },
-    lgc: { value: 0 },
-    bows: { value: 0 },
+    pistols: { value: -2 },
+    lgc: { value: -1 },
+    bows: { value: -2 },
   });
 
   const [abilities, setAbilities] = useState<Abilities>({
@@ -575,6 +577,11 @@ function App() {
       if (baseRoll !== 1) {
         // Calculate Final Roll
         finalRoll += str;
+        
+        const skillModifier: ISkillModifier | undefined = skillModifiers.unarmed;
+        if (skillModifier) {
+          finalRoll += skillModifier.value;
+        }
 
         if (inspired) {
           finalRoll += 1;
@@ -600,7 +607,7 @@ function App() {
     }
 
     return { name: "Grapple", rolls: results };
-  }, [stats, inspired, headTargeting, limbTargeting, abilities.armorImmobility.active, abilities.brawny.active]);
+  }, [stats, skillModifiers.unarmed, inspired, headTargeting, limbTargeting, abilities.armorImmobility.active, abilities.brawny.active]);
 
   const [grappleResults, setGrappleResults] = useState<{name: string, rolls: number[]}>(calculateGrappleResults());
 
@@ -637,9 +644,9 @@ function App() {
         }
 
         // Calculate Final Roll
-        const skillModifier: ISkillModifier | undefined = skillModifiers[equippedWeapon.skill];
+        const skillModifier = getHighestSkillModifier(equippedWeapon.skill, skillModifiers);
         if (skillModifier) {
-          finalRoll += skillModifier.value;
+          finalRoll += skillModifier;
         }
 
         if (inspired) {
@@ -714,9 +721,9 @@ function App() {
         }
 
         // Calculate Final Roll
-        const skillModifier: ISkillModifier | undefined = skillModifiers[equippedWeapon.skill];
+        const skillModifier = getHighestSkillModifier(equippedWeapon.skill, skillModifiers);
         if (skillModifier) {
-          finalRoll += skillModifier.value;
+          finalRoll += skillModifier;
         }
 
         if (inspired) {
@@ -798,9 +805,9 @@ function App() {
 
       if (baseRoll !== 1) {
         // Calculate Final Roll
-        const skillModifier: ISkillModifier | undefined = skillModifiers[equippedWeapon.skill];
+        const skillModifier = getHighestSkillModifier(equippedWeapon.skill, skillModifiers);
         if (skillModifier) {
-          finalRoll += skillModifier.value;
+          finalRoll += skillModifier;
         }
 
         if (inspired) {
@@ -1043,7 +1050,7 @@ function App() {
         <table style={{width: "100%"}}>
             <thead>
               <tr>
-                <th>Unarmed</th>
+                <th>Unarmed (R-D)</th>
                 <th style={{width: "100px"}}>1</th>
                 <th style={{width: "100px", backgroundColor: "lightgray"}}>2</th>
                 <th style={{width: "100px"}}>3</th>
@@ -1497,7 +1504,6 @@ function SkillModifierRow({skill, skillModifiers, setSkillModifiers}: ISkillModi
         <input
           type="number"
           style={{width: "50px"}}
-          min={0}
           value={value}
           onChange={(e) => setValue(parseInt(e.target.value))}
         />
