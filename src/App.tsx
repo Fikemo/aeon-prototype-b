@@ -124,6 +124,42 @@ const weapons: IWeapons = {
     reach: 3,
     weight: 5,
   },
+  armingSword: {
+    name: "Arming Sword",
+    skill: weaponSkills.standardSwords,
+    attacks: [
+      { variance: [30, 40, 50, 60], attackType: attackTypes.slash },
+      { variance: [30, 45, 60], attackType: attackTypes.stab }
+    ],
+    durability: 60,
+    strikes: 3,
+    reach: 3,
+    weight: 6,
+  },
+  sideSword: {
+    name: "Side Sword",
+    skill: weaponSkills.standardSwords,
+    attacks: [
+      { variance: [25, 30, 35, 40], attackType: attackTypes.stab },
+      { variance: [40, 60, 80], attackType: attackTypes.slash }
+    ],
+    durability: 60,
+    strikes: 3,
+    reach: 3,
+    weight: 6,
+  },
+  bastardSword: {
+    name: "Bastard Sword",
+    skill: weaponSkills.standardSwords,
+    attacks: [
+      { variance: [40, 50, 60, 70], attackType: attackTypes.slash },
+      { variance: [30, 45, 60], attackType: attackTypes.stab }
+    ],
+    durability: 65,
+    strikes: 3,
+    reach: 3,
+    weight: 8,
+  },
   mace: {
     name: "Mace",
     skill: weaponSkills.maces,
@@ -136,6 +172,18 @@ const weapons: IWeapons = {
     reach: 2,
     weight: 6,
     lengthy: true,
+  },
+  beardedAxe: {
+    name: "Bearded Axe",
+    skill: weaponSkills.oneHandedAxes,
+    attacks: [
+      { variance: [70], attackType: attackTypes.slash },
+      { variance: [0], attackType: attackTypes.stab, strAdd: 1.5 }
+    ],
+    durability: 60,
+    strikes: 3,
+    reach: 3,
+    weight: 7,
   },
   woodenSpear: {
     name: "Wooden Spear",
@@ -174,6 +222,19 @@ const weapons: IWeapons = {
     reach: 3,
     weight: 8
   },
+  fixieBow: {
+    name: "Fixie Bow",
+    skill: weaponSkills.bows,
+    attacks: [
+      { variance: [20, 15], attackType: attackTypes.ranged, ranges: [30, 60] },
+      { variance: [0], attackType: attackTypes.slash, strAdd: 1.5 },
+      { variance: [0], attackType: attackTypes.stab, strAdd: 1.5 },
+    ],
+    durability: 30,
+    strikes: 1,
+    reach: 3,
+    weight: 1,
+  },
   longbow: {
     name: "Longbow",
     skill: weaponSkills.bows,
@@ -186,6 +247,33 @@ const weapons: IWeapons = {
     strikes: 2,
     reach: 5,
     weight: 3,
+  },
+
+  // Temp
+  athansiosTalons: {
+    name: "Athansios' Talons",
+    skill: weaponSkills.daggers,
+    attacks: [
+      { variance: [80, 90], attackType: attackTypes.slash },
+      { variance: [40, 50], attackType: attackTypes.stab, strAdd: 1.5 }
+    ],
+    durability: 40,
+    strikes: 2,
+    reach: 3,
+    weight: 3,
+    lengthy: true,
+    ambushWeapon: true,
+  },
+  athansiosTailWhip: {
+    name: "Athansios' Tail Whip",
+    skill: weaponSkills.flails,
+    attacks: [
+      { variance: [0], attackType: attackTypes.slash, blunt: true, strAdd: 2 },
+    ],
+    durability: 30,
+    strikes: 3,
+    reach: 4,
+    weight: 8
   }
 }
 
@@ -1366,11 +1454,12 @@ function BlankAttackRow() {
 interface IAttackRowProps {
   label: string,
   values: number[] | string[],
+  border?: boolean,
 }
 
-function AttackRow({ label, values }: IAttackRowProps) {
+function AttackRow({ label, values,border }: IAttackRowProps) {
   return (
-    <tr>
+    <tr style={{borderTop: border ? "1px solid gray" : ""}}>
       <td>{label}</td>
       {values.map((value, index) => (
         <td key={index}
@@ -1417,11 +1506,33 @@ function WeaponAttackTBodies({
       let damage = 0;
 
       if (baseRoll !== 1) {
+        // Calculate damage
         const damageLookupRow = variance.length - 1;
         const damageLookupIndex = damageLookup[damageLookupRow]?.[Math.min(baseRoll, 8) - 1];
         damage = variance[damageLookupIndex];
 
+        if (attack.strAdd) damage += str * attack.strAdd;
+
+        damage = getModifiedDamage(damage, baseRoll === 10, equippedWeapon.ambushWeapon === true);
+
         results.damages.push(damage);
+
+        // Calculate final roll
+        finalRoll += getHighestSkillModifier(equippedWeapon.skill, skillModifiers);
+
+        if (inspiringPresence) finalRoll += 1;
+
+        if (chargeAttack) finalRoll -= 2;
+
+        if (headTargeting) finalRoll -= 2;
+        else if (limbTargeting) finalRoll -= 1;
+
+        if (abilities.armorImmobility.active) finalRoll -= 1;
+
+        let tempAgi = agi;
+        if (slowed) tempAgi /= 2;
+        tempAgi = Math.ceil(tempAgi);
+        finalRoll += tempAgi;
 
         results.finalRolls.push(finalRoll);
       } else {
@@ -1431,7 +1542,7 @@ function WeaponAttackTBodies({
     }
 
     return results;
-  }, [stats]);
+  }, [abilities.armorImmobility.active, chargeAttack, equippedWeapon.ambushWeapon, equippedWeapon.skill, getModifiedDamage, headTargeting, inspiringPresence, limbTargeting, skillModifiers, slowed, stats]);
 
   const calculateStabResults = useCallback((attack: IAttack) => {
     const {variance} = attack;
@@ -1445,23 +1556,97 @@ function WeaponAttackTBodies({
       damages: [],
     }
 
+    for (let roll = 1; roll <= 10; roll++) {
+      const baseRoll = roll;
+      let finalRoll = baseRoll;
+      let damage = 0;
+
+      if (baseRoll !== 1) {
+        // Calculate damage
+        const damageLookupRow = variance.length - 1;
+        const damageLookupIndex = damageLookup[damageLookupRow]?.[Math.min(baseRoll, 8) - 1];
+        damage = variance[damageLookupIndex];
+
+        if (attack.strAdd) damage += str * attack.strAdd;
+
+        damage = getModifiedDamage(damage, baseRoll === 10, equippedWeapon.ambushWeapon === true);
+
+        results.damages.push(damage);
+
+        // Calculate final roll
+        finalRoll += getHighestSkillModifier(equippedWeapon.skill, skillModifiers);
+
+        if (inspiringPresence) finalRoll += 1;
+
+        if (chargeAttack) finalRoll -= 2;
+
+        if (headTargeting) finalRoll -= 3;
+        else if (limbTargeting) finalRoll -= 1;
+
+        if (abilities.armorImmobility.active) finalRoll -= 1;
+
+        let tempAgi = agi;
+        if (slowed) tempAgi /= 2;
+        tempAgi = Math.ceil(tempAgi);
+        finalRoll += tempAgi;
+
+        results.finalRolls.push(finalRoll);
+      } else {
+        results.damages.push(0);
+        results.finalRolls.push(1);
+      }
+    }
+
     return results;
-  }, []);
+  }, [abilities.armorImmobility.active, chargeAttack, equippedWeapon.ambushWeapon, equippedWeapon.skill, getModifiedDamage, headTargeting, inspiringPresence, limbTargeting, skillModifiers, slowed, stats]);
 
   const calculateRangedResults = useCallback((attack: IAttack) => {
     const {variance} = attack;
     
     const str = getStatTotal(statTypes.STR, stats);
-    const agi = getStatTotal(statTypes.AGI, stats);
 
-    const results: {label: string, finalRolls: number[], damages: number[]} = {
+    const results: {label: string, finalRolls: number[], damages: string[]} = {
       label: "Slash",
       finalRolls: [],
       damages: [],
     }
 
+    for (let roll = 1; roll <= 10; roll++) {
+      const baseRoll = roll;
+      let finalRoll = baseRoll;
+      let damage = "0";
+
+      if (roll !== 1) {
+        // Calculate damage
+        const newDamage = variance.map((v) => {
+          return getModifiedDamage(v, baseRoll === 10, equippedWeapon.ambushWeapon === true);
+        });
+        damage = newDamage.join("-");
+        results.damages.push(damage);
+
+        // Calculate final roll
+        finalRoll += getHighestSkillModifier(equippedWeapon.skill, skillModifiers);
+
+        if (inspiringPresence) finalRoll += 1;
+
+        if (chargeAttack) finalRoll -= 2;
+
+        if (headTargeting) finalRoll -= 2;
+        else if (limbTargeting) finalRoll -= 1;
+
+        if (abilities.armorImmobility.active) finalRoll -= 1;
+
+        finalRoll += str;
+
+        results.finalRolls.push(finalRoll);
+      } else {
+        results.damages.push("0");
+        results.finalRolls.push(1);
+      }
+    }
+
     return results;
-  }, []);
+  }, [abilities.armorImmobility.active, chargeAttack, equippedWeapon.ambushWeapon, equippedWeapon.skill, getModifiedDamage, headTargeting, inspiringPresence, limbTargeting, skillModifiers, stats]);
 
   const {attacks} = equippedWeapon;
 
@@ -1469,6 +1654,7 @@ function WeaponAttackTBodies({
     return (
       <tbody key={index}>
         <AttackRow
+          border={true}
           label={attack.attackType === attackTypes.slash ? "Slash" : attack.attackType === attackTypes.stab ? "Stab" : "Ranged"}
           values={attack.attackType === attackTypes.slash ? calculateSlashResults(attack).finalRolls : attack.attackType === attackTypes.stab ? calculateStabResults(attack).finalRolls : calculateRangedResults(attack).finalRolls}
         />
