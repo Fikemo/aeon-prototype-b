@@ -3,14 +3,10 @@ import { useGlobalState } from './hooks/GlobalState';
 import { CharacterInstance } from './CharacterInstance';
 import './App.css'
 import {
-  Species
+  Species,
+  StatTypes,
+  StatKeys
 } from './Enums';
-
-import {
-  IStat,
-  Stat,
-  IStats,
-} from './Character';
 
 const pascalCaseToDisplayName = (str: string) => {
   return str.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase());
@@ -64,6 +60,10 @@ const NumberInput = ({ value, onChange, ...props }: {
     }
   };
 
+  useEffect(() => {
+    setTempValue(value.toString());
+  }, [value]);
+
   return (
     <input
       type="number"
@@ -87,18 +87,34 @@ const NumberInput = ({ value, onChange, ...props }: {
 const App = () => {
   const [character] = useGlobalState(CharacterInstance);
 
-  const [rerender, setRerender] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState(Tab.Overview);
 
   const [name, setName] = useState<string>(character.name);
   const [species, setSpecies] = useState<Species>(character.species);
   const [age, setAge] = useState<number>(character.age);
 
+  const [stats, setStats] = useState(character.stats);
+
+  const onCharacterPropertyChange = useCallback(() => {
+    setName(character.name);
+    setSpecies(character.species);
+    setAge(character.age);
+    setStats({...character.stats});
+  }, [character]);
+
+  useEffect(() => {
+    character.onValueChangedCallbacks.push(onCharacterPropertyChange);
+    return () => {
+      character.onValueChangedCallbacks = character.onValueChangedCallbacks.filter(cb => cb !== onCharacterPropertyChange);
+    };
+  }, [character, onCharacterPropertyChange]);
+
   return (
     <>
       <div style={{paddingBottom: '10px'}}>
         <label htmlFor="nameInput">Name: </label>
         <input type="text" id="nameInput" name="nameInput"
+          placeholder="Enter name"
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
               (e.target as HTMLInputElement).blur();
@@ -182,22 +198,24 @@ const App = () => {
               </tr>
             </thead>
             <tbody>
-              {Object.entries(character.stats).map(([statName, statTables]) => (
-                <tr key = {statName}>
-                  <td>{statName}</td>
-                  {Object.entries(statTables.toJSON() as IStat).map(([tableName, value]) => (
-                    <td key={tableName}>
+              {Object.entries(stats).map(([stat, values]) => (
+                <tr key={stat}>
+                  <td>{stat.toUpperCase()}</td>
+                  {Object.entries(values).map(([key, value]) => (
+                    <td key={key}>
                       <NumberInput
                         value={value}
                         onChange={(newValue) => {
-                          character.setStat(statName as keyof IStats, tableName as keyof IStat, newValue);
-                          setRerender(!rerender);
+                          character.setStat(stat as StatTypes, key as StatKeys, newValue);
+                          setStats({...character.stats});
                         }}
                       />
                     </td>
                   ))}
-                  <td style={{ textAlign: 'center' }} >
-                    {statTables.total}
+                  <td
+                    style={{textAlign: 'right'}}
+                  >
+                    {character.getStatTotal(stat as StatTypes)}
                   </td>
                 </tr>
               ))}

@@ -1,82 +1,22 @@
 import {
-    Species
+    Species,
+    StatTypes,
+    StatKeys,
 } from './Enums';
-
-export interface IStats {
-    STR: Stat;
-    AGI: Stat;
-    INT: Stat;
-    PRE: Stat;
-    SPI: Stat;
-    CON: Stat;
-}
 
 interface ICharacter {
     name: string;
     species: Species;
     age: number;
-    stats: IStats;
-}
-
-export interface IStat {
-    base: number;
-    general: number;
-    melee: number;
-    ranged: number;
-    magic: number;
-    temp: number;
-}
-
-export class Stat implements IStat {
-    #base: number = 0;
-    #general: number = 0;
-    #melee: number = 0;
-    #ranged: number = 0;
-    #magic: number = 0;
-    #temp: number = 0;
-
-    get base(): number { return this.#base; }
-    set base(value: number) { this.#base = value; }
-
-    get general(): number { return this.#general; }
-    set general(value: number) { this.#general = value; }
-
-    get melee(): number { return this.#melee; }
-    set melee(value: number) { this.#melee = value; }
-
-    get ranged(): number { return this.#ranged; }
-    set ranged(value: number) { this.#ranged = value; }
-
-    get magic(): number { return this.#magic; }
-    set magic(value: number) { this.#magic = value; }
-
-    get temp(): number { return this.#temp; }
-    set temp(value: number) { this.#temp = value; }
-
-    get total(): number {
-        return this.#base + this.#general + this.#melee + this.#ranged + this.#magic + this.#temp;
-    }
-
-    toJSON(): IStat {
-        return {
-            base: this.#base,
-            general: this.#general,
-            melee: this.#melee,
-            ranged: this.#ranged,
-            magic: this.#magic,
-            temp: this.#temp,
+    stats: {
+        [key: string]: {
+            base: number,
+            general: number,
+            melee: number,
+            ranged: number,
+            magic: number,
+            temp: number,
         }
-    }
-
-    fromJSON(json: IStat): this {
-        this.#base = json.base;
-        this.#general = json.general;
-        this.#melee = json.melee;
-        this.#ranged = json.ranged;
-        this.#magic = json.magic;
-        this.#temp = json.temp;
-
-        return this;
     }
 }
 
@@ -85,12 +25,12 @@ const defaultCharacter: ICharacter = {
     species: Species.Human,
     age: 20,
     stats: {
-        STR: new Stat(),
-        AGI: new Stat(),
-        INT: new Stat(),
-        PRE: new Stat(),
-        SPI: new Stat(),
-        CON: new Stat(),
+        str: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
+        agi: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
+        int: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
+        pre: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
+        spi: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
+        con: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
     }
 }
 
@@ -98,15 +38,23 @@ export class Character implements ICharacter {
     #name: string = defaultCharacter.name;
     #species: Species = defaultCharacter.species;
     #age: number = defaultCharacter.age;
-
-    #stats: IStats = {
-        STR: new Stat(),
-        AGI: new Stat(),
-        INT: new Stat(),
-        PRE: new Stat(),
-        SPI: new Stat(),
-        CON: new Stat(),
+    #stats: { [key: string]: {
+        base: number,
+        general: number,
+        melee: number,
+        ranged: number,
+        magic: number,
+        temp: number,
+    }} = {
+        str: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
+        agi: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
+        int: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
+        pre: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
+        spi: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
+        con: { base: 0, general: 0, melee: 0, ranged: 0, magic: 0, temp: 0 },
     }
+
+    onValueChangedCallbacks: (() => void)[] = [];
 
     constructor() {
         const savedJSON = window.localStorage.getItem('character');
@@ -122,7 +70,7 @@ export class Character implements ICharacter {
     }
     set name(name: string) {
         this.#name = name;
-        this.onValueChanged();
+        this.#onValueChanged();
     }
 
     get species(): Species {
@@ -130,7 +78,7 @@ export class Character implements ICharacter {
     }
     set species(species: Species) {
         this.#species = species;
-        this.onValueChanged();
+        this.#onValueChanged();
     }
 
     get age(): number {
@@ -138,20 +86,40 @@ export class Character implements ICharacter {
     }
     set age(age: number) {
         this.#age = age;
-        this.onValueChanged();
+        this.#onValueChanged();
     }
-
-    get stats(): IStats {
+    get stats() {
         return this.#stats;
     }
 
-    setStat(stat: keyof IStats, table: keyof IStat, value: number) {
-        this.#stats[stat as keyof IStats][table as keyof IStat] = value;
-        this.onValueChanged();
+    setStat(
+        stat: StatTypes,
+        key: StatKeys,
+        value: number,
+    ) {
+        if (this.#stats[stat] === undefined) {
+            console.error(`Stat ${stat} does not exist`);
+            return;
+        }
+
+        if (this.#stats[stat]) {
+            this.#stats[stat][key] = value;
+            this.#onValueChanged();
+        }
     }
 
-    onValueChanged() {
+    getStatTotal(stat: StatTypes) {
+        return this.#stats[stat].base +
+        this.#stats[stat].general +
+        this.#stats[stat].melee +
+        this.#stats[stat].ranged +
+        this.#stats[stat].magic +
+        this.#stats[stat].temp;
+    }
+
+    #onValueChanged() {
         window.localStorage.setItem('character', JSON.stringify(this.toJSON()));
+        this.onValueChangedCallbacks.forEach(cb => cb());
     }
 
     toJSON(): ICharacter {
@@ -159,14 +127,7 @@ export class Character implements ICharacter {
             name: this.#name,
             species: this.#species,
             age: this.#age,
-            stats: {
-                STR: this.#stats.STR.toJSON(),
-                AGI: this.#stats.AGI.toJSON(),
-                INT: this.#stats.INT.toJSON(),
-                PRE: this.#stats.PRE.toJSON(),
-                SPI: this.#stats.SPI.toJSON(),
-                CON: this.#stats.CON.toJSON(),
-            }
+            stats: this.#stats,
         }
     }
 
@@ -179,6 +140,7 @@ export class Character implements ICharacter {
         this.#name = fullJSON.name;
         this.#species = fullJSON.species;
         this.#age = fullJSON.age;
+        this.#stats = fullJSON.stats;
     }
 
     testFunction() {
