@@ -2,7 +2,15 @@ import { useState, useEffect, useCallback } from 'react'
 import { useGlobalState } from './hooks/GlobalState';
 import { CharacterInstance } from './CharacterInstance';
 import './App.css'
-import { Species } from './Character';
+import {
+  Species
+} from './Enums';
+
+import {
+  IStat,
+  Stat,
+  IStats,
+} from './Character';
 
 const pascalCaseToDisplayName = (str: string) => {
   return str.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase());
@@ -10,7 +18,7 @@ const pascalCaseToDisplayName = (str: string) => {
 
 enum Tab {
   Overview,
-  Skills,
+  Stats,
   Inventory
 }
 
@@ -32,9 +40,54 @@ const TabButton = ({ label, onClick, activeTab } : {
   )
 }
 
+const NumberInput = ({ value, onChange, ...props }: {
+  value: number,
+  onChange: (value: number) => void,
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void,
+  [key: string]: unknown
+}) => {
+  const [tempValue, setTempValue] = useState<string>(value.toString());
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    const parsedValue = parseInt(tempValue, 10);
+    if (!isNaN(parsedValue)) {
+      onChange(parsedValue); // Update the real value if it's valid
+    } else {
+      setTempValue(value.toString()); // Reset to the last valid value
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = e.target.value;
+    if (/^-?\d*$/.test(inputValue)) { // Allow only integer-like input
+      setTempValue(inputValue);
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      value={tempValue}
+      style={{
+        width: '50px'
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          (e.target as HTMLInputElement).blur();
+        }
+        if (props.onKeyDown) { props.onKeyDown(e); }
+      }}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      {...props}
+    />
+  )
+}
+
 const App = () => {
   const [character] = useGlobalState(CharacterInstance);
 
+  const [rerender, setRerender] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState(Tab.Overview);
 
   const [name, setName] = useState<string>(character.name);
@@ -63,9 +116,9 @@ const App = () => {
           activeTab={activeTab === Tab.Overview}
         />
         <TabButton
-          label={pascalCaseToDisplayName(Tab[Tab.Skills])}
-          onClick={() => setActiveTab(Tab.Skills)}
-          activeTab={activeTab === Tab.Skills}
+          label={pascalCaseToDisplayName(Tab[Tab.Stats])}
+          onClick={() => setActiveTab(Tab.Stats)}
+          activeTab={activeTab === Tab.Stats}
         />
         <TabButton
           label={pascalCaseToDisplayName(Tab[Tab.Inventory])}
@@ -75,8 +128,7 @@ const App = () => {
         <div style={{float: 'right'}}>
           <button
             onClick={() => {
-              console.log(character);
-              console.log(character.toJSON());
+              character.testFunction();
             }}
           >
             Test
@@ -106,29 +158,52 @@ const App = () => {
             ))}
           </select>
           <br />
-          <label htmlFor="ageInput">Age: </label>
-          <input
-            type="number"
-            id="ageInput"
-            name="ageInput"
-            defaultValue={age}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            onBlur={(e) => {
-              const newAge = parseInt((e.target as HTMLInputElement).value);
-              if (!isNaN(newAge)) {
-                character.age = newAge;
-                setAge(newAge);
-              } else {
-                e.target.value = age.toString();
-              }
+          <label>Age: </label>
+          <NumberInput
+            value={age}
+            onChange={(value) => {
+              character.age = value;
+              setAge(value);
             }}
           />
         </div>}
-        {activeTab === Tab.Skills && <div>Skills</div>}
+        {activeTab === Tab.Stats && <div>
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Base</th>
+                <th>General</th>
+                <th>Melee</th>
+                <th>Ranged</th>
+                <th>Magic</th>
+                <th>Temp</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(character.stats).map(([statName, statTables]) => (
+                <tr key = {statName}>
+                  <td>{statName}</td>
+                  {Object.entries(statTables.toJSON() as IStat).map(([tableName, value]) => (
+                    <td key={tableName}>
+                      <NumberInput
+                        value={value}
+                        onChange={(newValue) => {
+                          character.setStat(statName as keyof IStats, tableName as keyof IStat, newValue);
+                          setRerender(!rerender);
+                        }}
+                      />
+                    </td>
+                  ))}
+                  <td style={{ textAlign: 'center' }} >
+                    {statTables.total}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>}
         {activeTab === Tab.Inventory && <div>Inventory</div>}
       </div>
     </>
